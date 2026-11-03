@@ -21,8 +21,13 @@ const effort = atom({ plugin: 'clawd-pet', key: 'effort' } as const, null)
 const hero = atom({ plugin: 'clawd-pet', key: 'hero' } as const, false)
 const barRows = atom({ plugin: 'clawd-pet', key: 'barRows' } as const, 0)
 
-// Ultracode's switch in /effort, as its output reports it ("Ultracode on") or its arguments ask for it.
+// Ultracode's switch in /effort, as its output reports it: "Ultracode on", "· Ultracode off".
 const ULTRACODE = /\bultracode\W+(on|off)\b/i
+
+// The `ultracode` setting as it stands: true, false, or undefined when nothing set it.
+async function readUltracode($: StateDollar): Promise<unknown> {
+  return $.settings.read({ key: 'ultracode' }).catch(() => undefined)
+}
 
 // Effort levels, lowest first: how hard Claude is asked to think.
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -134,25 +139,42 @@ export const register: Register = on => {
     // Dress for the model the chat starts on (this runs again on each reload of the mod).
     const model = await $.session.model().catch(() => '')
     if (model) await wearSuitFor($, model, false)
-    // A session started with ultracode on (the `ultracode` settings key) starts as the hero.
-    const ultracode = await $.settings.read({ key: 'ultracode' }).catch(() => undefined)
-    await update($, hero, () => ultracode === true)
+    // The desktop app's effort menu flips ultracode as a session setting, with no command and no row in the
+    // conversation, and nothing announces it: watch the setting, and transform when it changes.
+    // A session that starts with it on starts as the hero.
+    let setting = await readUltracode($)
+    await update($, hero, () => setting === true)
+    $.clock.every(1000, async () => {
+      const now = await readUltracode($)
+      // Only a change counts: /effort in the terminal may flip ultracode without touching the setting.
+      if (now === setting) return
+      setting = now
+      await update($, hero, () => now === true)
+    })
 
     return next(e)
   })
 
-  // Ultracode is a switch in /effort (Tab in its slider, or /effort ultracode on|off): Clawd transforms as it flips.
-  on('command.run', { command: 'effort' }, async ($, e, next) => {
-    const result = await next(e)
-    try {
-      // What the command reports wins over what its arguments asked for.
-      const flipped = ULTRACODE.exec(result.text ?? '') ?? ULTRACODE.exec(e.args)
-      if (flipped) await update($, hero, () => flipped[1]?.toLowerCase() === 'on')
-    } catch {
-      // Clawd's bookkeeping never gets in the way of /effort.
+  // Ultracode is a switch in /effort (Tab in its slider, or /effort ultracode on|off). No event says it flipped, but
+  // the conversation shows it: /effort's output row reads "Ultracode on" or "off" once its panel closes, and the next
+  // prompt carries Claude Code's own ultra_effort_enter or ultra_effort_exit note, however the switch was flipped.
+  on('session.append', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      try {
+        // Only command output: a prompt or a reply that merely mentions ultracode is not the switch. A plugin's
+        // command answers as a system notice; a built-in's comes as a user row wrapped in <local-command-stdout>.
+        const all = e.message.content.map(b => ('text' in b && typeof b.text === 'string' ? b.text : '')).join(' ')
+        const isOutput = e.message.type === 'system' || e.door === 'command' || e.door === 'notice' || all.includes('<local-command-stdout>')
+        const text = isOutput ? all : ''
+        const name = e.message.name
+        const flipped = name === 'ultra_effort_enter' ? 'on' : name === 'ultra_effort_exit' ? 'off' : ULTRACODE.exec(text)?.[1]?.toLowerCase()
+        if (flipped) await update($, hero, () => flipped === 'on')
+      } catch {
+        // Clawd's bookkeeping never holds up the conversation.
+      }
     }
 
-    return result
+    return next(e)
   })
 
   on('command.run', { command: 'clawd' }, async ($, e) => {

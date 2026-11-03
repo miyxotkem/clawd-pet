@@ -453,10 +453,8 @@ test('turning ultracode on in /effort makes Clawd a flying hero that fires on id
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Text', null, 'other bar'))
   on('prompt.submit', (_, e) => ({ text: e.text }) as never)
-  // Stands for /effort: the slider (no arguments) reports what it set, as the command does with them.
-  on('command.run', { command: 'effort' }, (_, e) =>
-    ({ text: e.args ? `Ultracode ${e.args.split(' ')[1]}` : 'Set effort to high · Ultracode on' }) as never,
-  )
+  // /effort's output, as the row the conversation keeps once its panel closes.
+  const effortSays = (text: string) => $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } } as never)
   on('turn.complete', () => ({ text: '' }) as never)
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
   await ui.advance(100)
@@ -464,13 +462,14 @@ test('turning ultracode on in /effort makes Clawd a flying hero that fires on id
   const tree = async () => JSON.stringify(await ui.drawn())
   const crab = async () => JSON.stringify(await ui.drawn({ in: 'clawd' }))
 
-  // The word in a prompt is not the switch.
+  // The word in a prompt, or a message that mentions it, is not the switch.
   await $.prompt.submit({ text: 'ultracode: fix the login bug' } as never)
+  await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: 'turn ultracode on please' }] } } as never)
   await ui.advance(5000)
   expect(await crab()).not.toContain(VISOR)
 
   // Turned on in the slider.
-  await $.command.run({ command: 'effort', args: '' })
+  await effortSays('Set effort level to high · Ultracode on')
   let rings = false
   let shout = false
   for (let i = 0; i < 45; i++) {
@@ -506,14 +505,42 @@ test('turning ultracode on in /effort makes Clawd a flying hero that fires on id
   await $.prompt.submit({ text: 'thanks' } as never)
   await ui.advance(5000)
   expect(await crab()).toContain(VISOR)
-  await $.command.run({ command: 'effort', args: 'ultracode off' })
+  await effortSays('Ultracode off')
   await ui.advance(5000)
   expect(await crab()).not.toContain(VISOR)
   // And /effort ultracode on suits it up again.
-  await $.command.run({ command: 'effort', args: 'ultracode on' })
+  await effortSays('Ultracode on')
   await ui.advance(5000)
   expect(await crab()).toContain(VISOR)
   await ui.unmount()
+})
+
+test("the desktop app's effort menu flipping the ultracode setting transforms Clawd too", async ($, on) => {
+  const clock = mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('command.register', () => ({ value: { command: 'clawd' } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: 'claude-fable-5-1' }))
+  // Stands for the settings: the menu writes `ultracode` for the session, no command or row involved.
+  let ultracode: boolean | undefined
+  on('settings.read', () => ({ value: ultracode === undefined ? {} : { ultracode } }) as never)
+  const visor = async () => {
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    await ui.advance(100)
+    const tree = JSON.stringify(await ui.drawn({ in: 'clawd' }))
+    await ui.unmount()
+    return tree.includes(VISOR)
+  }
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(await visor()).toBe(false)
+  ultracode = true
+  await clock.advance(1100)
+  expect(await visor()).toBe(true)
+  ultracode = false
+  await clock.advance(1100)
+  expect(await visor()).toBe(false)
 })
 
 test('Clawd types along while you type, and stops a few seconds after', async ($, on) => {
