@@ -57,8 +57,14 @@ function effortLine(from: string, to: string): string {
 // Keep in step with COSTUMES in clawd.tsx.
 const COSTUME_NAMES = [
   'detective', 'chef', 'coder', 'dj', 'wizard', 'reader', 'thinker', 'rocket', 'parachute',
-  'spidercrab', 'batcrab', 'captain', 'party', 'cheer', 'santa', 'pumpkin', 'tet',
+  'spidercrab', 'batcrab', 'captain', 'party', 'cheer', 'question', 'bell', 'sign', 'santa', 'pumpkin', 'tet',
 ]
+
+// Waiting on you: one of these each time, and a word to get your attention.
+const WAITING = ['question', 'bell', 'sign']
+const WAIT_LINES = ['Your turn!', 'Need your OK!', 'Psst, over here!', 'Waiting on you…']
+// Tools that put a question to you: their call lasts until you answer.
+const ASKS_YOU = ['AskUserQuestion', 'ExitPlanMode']
 
 // Tết (lunar new year) by year, as [month (0-based), day].
 // shortcut: a fixed table, add years past 2030 when it runs out.
@@ -138,6 +144,13 @@ const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)] ?
 
 function say($: StateDollar, text: string, kind: Say['kind'] = 'info') {
   return update($, said, prev => ({ id: (prev?.id ?? 0) + 1, text, kind }))
+}
+
+// Clawd waits with you, once per wait: a question and its permission ask are one wait.
+async function waitOnYou($: StateDollar) {
+  if (WAITING.includes((await read($, activity)) ?? '')) return
+  await update($, activity, () => pick(WAITING))
+  await say($, pick(WAIT_LINES))
 }
 
 export const register: Register = on => {
@@ -278,10 +291,12 @@ export const register: Register = on => {
       lastToolAt = now
       await say($, line)
     }
-    if (e.tool !== 'Agent' && !moment) return next(e)
+    const asksYou = ASKS_YOU.includes(e.tool)
+    if (e.tool !== 'Agent' && !moment && !asksYou) return next(e)
 
     // A helper crab walks beside Clawd while each subagent runs.
     if (e.tool === 'Agent') await update($, helpers, n => n + 1)
+    if (asksYou) await waitOnYou($)
     try {
       const result = await next(e)
       if (moment && !result.deny) await say($, result.isError ? moment.fail : moment.ok, result.isError ? 'error' : 'done')
@@ -289,7 +304,18 @@ export const register: Register = on => {
       return result
     } finally {
       if (e.tool === 'Agent') await update($, helpers, n => Math.max(0, n - 1))
+      // Answered: back to thinking it over with Claude.
+      if (asksYou) await update($, activity, () => 'thinker')
     }
+  }).catch(($, e, next) => next(e))
+
+  // A permission prompt is about to ask you: Clawd waits with you.
+  // shortcut: no event says when you answer, so the costume stays on while an approved tool runs, until the next tool
+  // or the turn's end; upgrade if the API gains one.
+  on('classic.PermissionRequest', async ($, e, next) => {
+    await waitOnYou($)
+
+    return next(e)
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {

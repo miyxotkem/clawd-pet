@@ -88,6 +88,10 @@ const COSTUMES: Record<string, Piece[]> = {
     { ox: -2, oy: 1, rows: ['ry', 'yr'] },
     { ox: 10, oy: 1, rows: ['yr', 'ry'] },
   ],
+  // Waiting on you (a question, a permission ask): a question mark, a bell, or a sign held up.
+  question: [{ ox: 10, oy: -2, rows: ['yyy', '..y', '.y.', '...', '.y.'] }],
+  bell: [{ ox: -4, oy: -1, rows: ['.y.', 'yyy', 'yyy', '.d.'] }],
+  sign: [{ ox: 10, oy: -2, rows: ['www', 'wrw', 'wrw', 'www', 'wrw', '.d.'] }],
   // Holiday outfits, worn between jobs in their season.
   santa: [{ ox: 1, oy: -2, rows: ['..rrrrrrw', 'wwwwwwww'] }],
   pumpkin: [{ ox: 10, oy: 1, rows: ['..d..', 'pkpkp', 'ppppp'] }],

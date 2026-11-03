@@ -32,7 +32,7 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 - **Helper crabs.** Each subagent Claude starts brings a small crab that walks beside Clawd until the subagent returns (up to three at once).
 - **Commits, pushes and tests.** Clawd puts on a party hat for `git commit`, launches the rocket for `git push`, and shakes pom-poms while tests run (`npm test`, `pytest`, `cargo test` and the like). When the command finishes it cheers, or looks sad if it failed.
 - **Drag and throw.** Grab Clawd and move it, even up over the bars above the prompt. It can always rise 6 rows, and it measures those bars, so when they are taller it rises as high as they reach. Let go and it falls back down; drop or fling it hard and it lands stunned, with stars. Every third high drop, it opens a parachute instead.
-- **Cosplay.** By default Clawd dresses for Claude's work: a thought bubble while thinking, a book for reading files, a chef's hat for edits, a deerstalker for searches, a wizard hat for commands, a laptop and coffee for other tools, a rocket when a turn is done, and headphones after 20 seconds idle.
+- **Cosplay.** By default Clawd dresses for Claude's work: a thought bubble while thinking, a book for reading files, a chef's hat for edits, a deerstalker for searches, a wizard hat for commands, a laptop and coffee for other tools, a rocket when a turn is done, and headphones after 20 seconds idle. When Claude waits on you, for a permission prompt or a question, Clawd calls for you with a question mark, a bell or a "!" sign, picked at random each time.
 - **Model suits.** Clawd wears a suit for the model the chat runs on, and changes when you switch with `/model`: the spidercrab suit on Opus 5.5, the batcrab suit on Haiku 5.5, the captain suit on Sonnet 5.5.
 - **Holidays.** Between jobs, a holiday outfit takes the suit's place: a pumpkin from October 24 to 31, a Santa hat from December 1 to 26, and a mai blossom with a lì xì envelope for a week either side of Tết.
 
@@ -56,7 +56,7 @@ Turn **ultracode** on in `/effort` (Tab in the slider, or `/effort ultracode on`
 | `/clawd cosplay off` | No costumes |
 | `/clawd cosplay demo` | Show every costume in turn, about 3 seconds each |
 
-Costumes: `detective`, `chef`, `coder`, `dj`, `wizard`, `reader`, `thinker`, `rocket`, `parachute`, `spidercrab`, `batcrab`, `captain`, `party`, `cheer`, `santa`, `pumpkin`, `tet`.
+Costumes: `detective`, `chef`, `coder`, `dj`, `wizard`, `reader`, `thinker`, `rocket`, `parachute`, `spidercrab`, `batcrab`, `captain`, `party`, `cheer`, `question`, `bell`, `sign`, `santa`, `pumpkin`, `tet`.
 
 ## Development
 

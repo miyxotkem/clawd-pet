@@ -182,14 +182,14 @@ test('/clawd cosplay demo shows every costume in turn, then goes back to auto', 
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
 
   const shown: string[] = []
-  for (let i = 0; i < 17 * 30 + 20; i++) {
+  for (let i = 0; i < 20 * 30 + 20; i++) {
     await ui.advance(100)
-    const line = await ui.find({ type: 'Text', text: /^\d+\/17: /, in: 'clawd' })
+    const line = await ui.find({ type: 'Text', text: /^\d+\/20: /, in: 'clawd' })
     if (line?.text && !shown.includes(line.text)) shown.push(line.text)
   }
-  expect(shown.map(t => t.replace(/^\d+\/17: /, ''))).toEqual([
+  expect(shown.map(t => t.replace(/^\d+\/20: /, ''))).toEqual([
     'detective', 'chef', 'coder', 'dj', 'wizard', 'reader', 'thinker', 'rocket', 'parachute',
-    'spidercrab', 'batcrab', 'captain', 'party', 'cheer', 'santa', 'pumpkin', 'tet',
+    'spidercrab', 'batcrab', 'captain', 'party', 'cheer', 'question', 'bell', 'sign', 'santa', 'pumpkin', 'tet',
   ])
   const after = await $.command.run({ command: 'clawd', args: 'cosplay' })
   expect(JSON.stringify(after)).toContain('Now: auto')
@@ -684,6 +684,34 @@ test('Clawd types along while you type, and stops a few seconds after', async ($
   await edit('h', 0, 0, '')
   await ui.advance(1000)
   expect(await tapping()).toBe(false)
+  await ui.unmount()
+})
+
+test('waiting on you, Clawd holds up a question mark, a bell or a sign, and takes it off once you answer', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  on('tool.call', () => ({ result: {} }))
+  on('classic.PermissionRequest', () => ({}))
+  // Every waiting costume shows yellow (question, bell) or red (the sign's "!"); thinking shows neither.
+  const waiting = (tree: string) => tree.includes('#f5c542') || tree.includes('#d9452b')
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  const look = async () => {
+    await ui.advance(100)
+    return JSON.stringify(await ui.drawn({ in: 'clawd' }))
+  }
+  await $.prompt.submit({ text: 'go' } as never)
+  expect(waiting(await look())).toBe(false)
+
+  // A permission prompt: Clawd waits, and says so.
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm x' } } as never)
+  const asked = await look()
+  expect(waiting(asked)).toBe(true)
+  expect(asked).toMatch(/Your turn!|Need your OK!|Psst, over here!|Waiting on you…/)
+
+  // A question Claude puts to you: answered, Clawd goes back to thinking.
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
+  expect(waiting(await look())).toBe(false)
   await ui.unmount()
 })
 
