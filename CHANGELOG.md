@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.0 (2026-11-03)
+
+Clawd clones itself into the sessions Claude starts, calls for you when Claude waits on you, reminds you to eat, and works up a real sweat on long turns.
+
+### New
+
+- **Clones.** When Claude starts another session, a full-size clone splits off Clawd, hops and dives into the ground. In the new session Clawd digs up and works like any Clawd. When that session's first task is done, it dives back down, then digs up in the session it came from, walks over and merges back in. Both sessions need to run on the same computer.
+- **Waiting on you.** When Claude needs your answer, for a permission prompt or a question, Clawd calls for you with a question mark, a bell or a "!" sign, picked at random each time, and says so. Answering a question takes it off. Three new costumes: `question`, `bell` and `sign`, for 20 in all.
+- **Meal and break reminders.** Once a day each, Clawd reminds you about breakfast (7:30), a stretch break (10:30), lunch (12:00), a snack (15:30), dinner (18:30) and bedtime (22:30), even if you open Claude up to an hour late.
+- **Hunting for the answer.** Past three minutes on one turn, Clawd runs back and forth across the bar as fast as its legs go, calling out as it looks for the fix.
+
+### Changed
+
+- **Headphones sooner.** Clawd puts its DJ headphones on after 20 seconds idle instead of 40.
+- **Sweat sooner, and more.** Clawd starts to sweat after one minute on a turn instead of two. Drops fly off its head, twice as often after two minutes, and in a spray after three.
+- **Thinking dots change sides.** Every 4 seconds they move to the other side of Clawd's head, if no costume, "tap tik" or the edge of the bar is in the way, and fill outward from the head on either side.
+
+### Fixed
+
+- **Costumes covering words.** The speech bubble makes room for whatever Clawd wears beside it (the rocket reached into it), the sleeping z's move off a book over its head, and words and effects are drawn last, so nothing Clawd wears or a passing clone covers them.
+
 ## 1.1.3 (2026-11-03)
 
 A hotfix: subagents no longer end Clawd's turn early.
