@@ -29,7 +29,9 @@ const PALETTE: Record<string, string> = {
   t: '#c98a3c', // tan
   r: '#d9452b', // red
   x: '#6e1a10', // spider web lines: a dark red, as black reads as holes on a dark theme
+  p: '#f08a24', // pumpkin orange, brighter than Clawd
 }
+const SWEAT = '#7fc4f0'
 
 // A costume is pieces drawn over the crab, placed from its top-left cell (rows above are negative).
 type Piece = { ox: number; oy: number; rows: string[] }
@@ -73,7 +75,30 @@ const COSTUMES: Record<string, Piece[]> = {
   ],
   // Sonnet 5.5's suit: a round shield, red rim, white ring, blue centre.
   captain: [{ ox: 10, oy: 1, rows: ['.rrr.', 'rwBwr', '.rrr.'] }],
+  // git commit: a party hat and confetti.
+  party: [
+    { ox: 4, oy: -2, rows: ['.y.', 'rBr'] },
+    { ox: -1, oy: -2, rows: ['B', '.', 'r'] },
+    { ox: 9, oy: -2, rows: ['y.B'] },
+  ],
+  // Test runs: pom-poms.
+  cheer: [
+    { ox: -2, oy: 1, rows: ['ry', 'yr'] },
+    { ox: 10, oy: 1, rows: ['yr', 'ry'] },
+  ],
+  // Holiday outfits, worn between jobs in their season.
+  santa: [{ ox: 1, oy: -2, rows: ['..rrrrrrw', 'wwwwwwww'] }],
+  pumpkin: [{ ox: 10, oy: 1, rows: ['..d..', 'pkpkp', 'ppppp'] }],
+  // Tết: a mai blossom and a red lì xì envelope.
+  tet: [
+    { ox: 2, oy: -2, rows: ['.y.', 'yty'] },
+    { ox: 10, oy: 1, rows: ['rrr', 'ryr', 'rrr'] },
+  ],
 }
+// A plaster on the head while sad after an error.
+const BANDAGE: Piece = { ox: 6, oy: 0, rows: ['twt'] }
+// Past this many ticks of one turn (2 minutes), Clawd sweats.
+const LONG_TURN = 1200
 
 // Suits recolour the crab itself, row by row (top, eyes, arms, legs), so every pose still shows through.
 // `paint` gives body cells a colour of their own ('.' keeps the row's); eye cells are never painted over.
@@ -121,6 +146,8 @@ type World = {
   costumeAt: number
   demoShown: number
   isDemoDone: boolean
+  // The tick the current turn started on, or -1 between turns.
+  workSince: number
 }
 
 const CHATTER = [
@@ -198,6 +225,9 @@ function step(w: World, cols: number, rows: number) {
     }
   }
   if (p.mood === 'working') w.lastActive = w.t
+  if (p.mood !== 'working') w.workSince = -1
+  else if (w.workSince < 0) w.workSince = w.t
+  else if (w.t - w.workSince === LONG_TURN && w.mode !== 'held') say(w, pick(['Phew, this is a big one!', 'Still going… I need a snack.']))
 
   switch (w.mode) {
     case 'held':
@@ -410,6 +440,7 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       costumeAt: 0,
       demoShown: -1,
       isDemoDone: false,
+      workSince: -1,
     }
     say(w, timeGreeting(), 60)
     s.every(TICK_MS, () => {
@@ -483,6 +514,9 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     fx = { text: z[Math.floor(w.t / 6) % 4] ?? '', color: '#8fa3bf', dx: SPRITE_W - 2 }
   } else if (w.mode === 'jump') {
     fx = { text: flip ? '✦        ✦' : ' ✧      ✧', color: STAR, dx: 0 }
+  } else if (w.workSince >= 0 && w.t - w.workSince >= LONG_TURN && w.mode !== 'held') {
+    // Sweat drops flicking off one side of the head, then the other.
+    fx = { text: "'", color: SWEAT, dx: flip ? -1 : SPRITE_W }
   } else if (w.props.mood === 'working' && w.mode !== 'held' && !costume) {
     fx = { text: ['·  ', '·· ', '···'][Math.floor(w.t / 4) % 3] ?? '', color: BODY, dx: SPRITE_W - 1 }
   }
@@ -494,6 +528,10 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
   const bubbleLeft = rightOf + bubbleW <= props.columns ? rightOf : Math.max(0, x - bubbleW - 4)
   const bubbleTop = Math.max(0, props.rows - 3)
   const left = x + swing
+  const pieces = [...(costume ? (COSTUMES[costume] ?? []) : []), ...(w.mode === 'sad' ? [BANDAGE] : [])]
+  // Helper crabs trail behind Clawd on the ground, or run ahead where there is no room behind.
+  const helperXs = Array.from({ length: Math.min(3, props.helpers) }, (_, i) => (x - 6 * (i + 1) >= 0 ? x - 6 * (i + 1) : x + SPRITE_W + 2 + 6 * i))
+  const helperRow = row({ o: BODY, L: DARK, R: DARK })
 
   return (
     <Box width={props.columns} height={props.rows + props.offset}>
@@ -510,9 +548,14 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       <Box position="absolute" top={y + props.offset} left={Math.max(0, left)} flexDirection="column">
         {spriteRows(w).map(crabRow)}
       </Box>
-      {(costume ? (COSTUMES[costume] ?? []) : []).map((piece, i) => (
+      {pieces.map((piece, i) => (
         <Box key={`c${i}`} position="absolute" top={y + piece.oy + props.offset} left={left + piece.ox} flexDirection="column">
           {piece.rows.map(row(PALETTE))}
+        </Box>
+      ))}
+      {helperXs.map((hx, i) => (
+        <Box key={`h${i}`} position="absolute" top={props.rows - 2 + props.offset} left={hx} flexDirection="column">
+          {['LooR', (w.t + i) % 4 < 2 ? 'o..o' : '.oo.'].map(helperRow)}
         </Box>
       ))}
     </Box>

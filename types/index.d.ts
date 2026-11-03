@@ -2,7 +2,8 @@ export type Mood = 'idle' | 'working'
 export type Say = { id: number; text: string; kind: 'info' | 'done' | 'error' }
 // offset: rows the region reaches above the crab's strip (over the other bars) while it is lifted.
 // costume: what it wears; isAutoCostume: chosen from Claude's work rather than by /clawd cosplay;
-// restCostume: the current model's suit, worn between jobs while costumes follow Claude's work.
+// restCostume: the holiday outfit or else the current model's suit, worn between jobs while costumes follow Claude's work.
+// helpers: subagents running now, each drawn as a small crab beside Clawd.
 export type PetProps = {
   mood: Mood
   say: Say | null
@@ -12,6 +13,7 @@ export type PetProps = {
   costume: string | null
   isAutoCostume: boolean
   restCostume: string | null
+  helpers: number
 }
 
 declare module 'claude-code' {
@@ -27,6 +29,8 @@ declare module 'claude-code' {
       activity: string | null
       // The suit the current model wears: set when /model switches to Opus, Haiku or Sonnet 5.5.
       suit: string | null
+      // Subagents running now.
+      helpers: number
     }
   }
 }

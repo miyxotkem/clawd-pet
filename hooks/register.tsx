@@ -15,9 +15,41 @@ const isLifted = atom({ plugin: 'clawd-pet', key: 'isLifted' } as const, false)
 const cosplay = atom({ plugin: 'clawd-pet', key: 'cosplay' } as const, 'auto')
 const activity = atom({ plugin: 'clawd-pet', key: 'activity' } as const, null)
 const suit = atom({ plugin: 'clawd-pet', key: 'suit' } as const, null)
+const helpers = atom({ plugin: 'clawd-pet', key: 'helpers' } as const, 0)
 
 // Keep in step with COSTUMES in clawd.tsx.
-const COSTUME_NAMES = ['detective', 'chef', 'coder', 'dj', 'wizard', 'reader', 'thinker', 'rocket', 'parachute', 'spidercrab', 'batcrab', 'captain']
+const COSTUME_NAMES = [
+  'detective', 'chef', 'coder', 'dj', 'wizard', 'reader', 'thinker', 'rocket', 'parachute',
+  'spidercrab', 'batcrab', 'captain', 'party', 'cheer', 'santa', 'pumpkin', 'tet',
+]
+
+// Tết (lunar new year) by year, as [month (0-based), day].
+// shortcut: a fixed table, add years past 2030 when it runs out.
+const TET: Record<number, [number, number]> = { 2026: [1, 17], 2027: [1, 6], 2028: [0, 26], 2029: [1, 13], 2030: [1, 3] }
+const DAY = 86_400_000
+
+// The holiday outfit for a date, if any: worn between jobs in place of the model's suit.
+function seasonFor(now: number): string | null {
+  const d = new Date(now)
+  const tet = TET[d.getFullYear()]
+  if (tet && Math.abs(now - new Date(d.getFullYear(), tet[0], tet[1]).getTime()) <= 7 * DAY) return 'tet'
+  if (d.getMonth() === 11 && d.getDate() <= 26) return 'santa'
+  if (d.getMonth() === 9 && d.getDate() >= 24) return 'pumpkin'
+  return null
+}
+
+// Commands worth a costume and a word before and after: commits, pushes, test runs.
+const MOMENTS: { match: RegExp; costume: string; start: string; ok: string; fail: string }[] = [
+  { match: /\bgit\s+commit\b/, costume: 'party', start: 'Committing…', ok: 'Committed! Party time!', fail: "The commit didn't take." },
+  { match: /\bgit\s+push\b/, costume: 'rocket', start: 'Pushing…', ok: 'Pushed! Liftoff!', fail: 'The push bounced back.' },
+  {
+    match: /\b(pytest|jest|vitest|mocha|rspec|phpunit)\b|\b(npm|pnpm|yarn|bun|deno|go|cargo|dotnet|mix|plugin)\s+(run\s+)?test\b/,
+    costume: 'cheer',
+    start: 'Go tests go!',
+    ok: 'Tests passed!',
+    fail: 'Tests failed…',
+  },
+]
 // The suit each model wears, matched on its id (claude-opus-5-5, maybe with a suffix), its name as
 // /model shows it (Opus 5.5), or a bare alias (opus), which points at the newest of the family: 5.5.
 const MODEL_SUITS: { match: RegExp; suit: string; line: string }[] = [
@@ -132,21 +164,34 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('tool.call', async ($, e, next) => {
-    const line = TOOL_LINES[e.tool]
-    await update($, activity, () => TOOL_COSTUMES[e.tool] ?? 'coder')
+    const command = (e.tool === 'Bash' || e.tool === 'PowerShell') && typeof e.command === 'string' ? e.command : ''
+    const moment = MOMENTS.find(m => m.match.test(command))
+    const line = moment?.start ?? TOOL_LINES[e.tool]
+    await update($, activity, () => moment?.costume ?? TOOL_COSTUMES[e.tool] ?? 'coder')
     const now = await $.clock.now()
-    // Talk only when the kind of work changes, and not more than every 6s.
-    if (line && e.tool !== lastTool && now - lastToolAt > 6000) {
+    // Talk only when the kind of work changes, and not more than every 6s; moments always talk.
+    if (line && (moment || (e.tool !== lastTool && now - lastToolAt > 6000))) {
       lastTool = e.tool
       lastToolAt = now
       await say($, line)
     }
+    if (e.tool !== 'Agent' && !moment) return next(e)
 
-    return next(e)
+    // A helper crab walks beside Clawd while each subagent runs.
+    if (e.tool === 'Agent') await update($, helpers, n => n + 1)
+    try {
+      const result = await next(e)
+      if (moment && !result.deny) await say($, result.isError ? moment.fail : moment.ok, result.isError ? 'error' : 'done')
+
+      return result
+    } finally {
+      if (e.tool === 'Agent') await update($, helpers, n => Math.max(0, n - 1))
+    }
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
     lastTool = ''
+    await update($, helpers, () => 0)
     await update($, mood, () => 'idle')
     await update($, activity, () => (e.reason === 'answer' ? 'rocket' : null))
     if (e.reason === 'answer') await say($, pick(['Done! ✓', 'All finished!', 'Ta-da!']), 'done')
@@ -192,7 +237,17 @@ export const register: Register = on => {
               width={columns}
               height={rows + offset}
               // The desktop app sizes a Client from what it draws, so the module needs the size up front.
-              props={{ mood: await read($, mood), say: await read($, said), columns, rows, offset, costume, isAutoCostume, restCostume: await read($, suit) }}
+              props={{
+                mood: await read($, mood),
+                say: await read($, said),
+                columns,
+                rows,
+                offset,
+                costume,
+                isAutoCostume,
+                restCostume: seasonFor(await $.clock.now()) ?? (await read($, suit)),
+                helpers: await read($, helpers),
+              }}
             />
           </Box>
         </Box>

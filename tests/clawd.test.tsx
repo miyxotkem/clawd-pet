@@ -1,4 +1,7 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
+
+// Clawd reads the date for its holiday outfits: tests run on a day with none.
+const NO_HOLIDAY = new Date(2026, 10, 3).getTime()
 
 const BAR = {
   plugin: 'clawd-pet',
@@ -7,6 +10,7 @@ const BAR = {
 } as const
 
 test('thrown crab lands stunned, on every surface that draws it', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   // Stands for the engine's own (empty) bar beneath this one.
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
 
@@ -36,6 +40,7 @@ test('thrown crab lands stunned, on every surface that draws it', async ($, on) 
 })
 
 test('the crab keeps the other bars above the prompt', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   // Stands for the engine and other plugins drawing their own bar beneath this one.
   on('ui.render', { component: 'AbovePrompt' }, () => h('Text', null, 'other bar'))
 
@@ -48,6 +53,7 @@ test('the crab keeps the other bars above the prompt', async ($, on) => {
 })
 
 test('hovering readies the room above, so a slow drag lifts the crab over the bars', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Text', null, 'other bar'))
 
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -86,6 +92,7 @@ test('hovering readies the room above, so a slow drag lifts the crab over the ba
 })
 
 test('the region never starts growing in the middle of a drag', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
   await ui.advance(100)
@@ -101,6 +108,7 @@ test('the region never starts growing in the middle of a drag', async ($, on) =>
 const NAVY = '#1b2f5e' // the wizard hat
 
 test('/clawd cosplay dresses Clawd up, and auto follows the tool Claude runs', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   on('command.register', () => ({ value: { command: 'clawd' } }))
   on('tool.call', () => ({ result: {} }))
@@ -136,6 +144,7 @@ test('/clawd cosplay dresses Clawd up, and auto follows the tool Claude runs', a
 })
 
 test('the parachute costume opens on a high drop: a soft landing, no stars', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   on('command.register', () => ({ value: { command: 'clawd' } }))
   await $.command.run({ command: 'clawd', args: 'cosplay parachute' })
@@ -164,20 +173,22 @@ test('the parachute costume opens on a high drop: a soft landing, no stars', asy
 })
 
 test('/clawd cosplay demo shows every costume in turn, then goes back to auto', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   on('command.register', () => ({ value: { command: 'clawd' } }))
   await $.command.run({ command: 'clawd', args: 'cosplay demo' })
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
 
   const shown: string[] = []
-  for (let i = 0; i < 12 * 30 + 20; i++) {
+  for (let i = 0; i < 17 * 30 + 20; i++) {
     await ui.advance(100)
-    const line = await ui.find({ type: 'Text', text: /^\d+\/12: /, in: 'clawd' })
+    const line = await ui.find({ type: 'Text', text: /^\d+\/17: /, in: 'clawd' })
     if (line?.text && !shown.includes(line.text)) shown.push(line.text)
   }
-  expect(shown.map(t => t.replace(/^\d+\/12: /, ''))).toEqual(
-    ['detective', 'chef', 'coder', 'dj', 'wizard', 'reader', 'thinker', 'rocket', 'parachute', 'spidercrab', 'batcrab', 'captain'],
-  )
+  expect(shown.map(t => t.replace(/^\d+\/17: /, ''))).toEqual([
+    'detective', 'chef', 'coder', 'dj', 'wizard', 'reader', 'thinker', 'rocket', 'parachute',
+    'spidercrab', 'batcrab', 'captain', 'party', 'cheer', 'santa', 'pumpkin', 'tet',
+  ])
   const after = await $.command.run({ command: 'clawd', args: 'cosplay' })
   expect(JSON.stringify(after)).toContain('Now: auto')
   await ui.unmount()
@@ -189,6 +200,7 @@ const BLUE = '#2f5d9e' // captain's suit (spidercrab's arms too)
 const WEB = '#6e1a10' // spidercrab's web lines
 
 test('Opus 5.5 suits Clawd up as spidercrab, Haiku 5.5 as batcrab, Sonnet 5.5 as captain, others take it off', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('classic.PostModelSwitch', () => ({}))
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   const switchTo = (to_model: string) =>
@@ -225,6 +237,7 @@ test('Opus 5.5 suits Clawd up as spidercrab, Haiku 5.5 as batcrab, Sonnet 5.5 as
 })
 
 test('a chat that starts on a model wears its suit without any /model switch', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   on('command.register', () => ({ value: { command: 'clawd' } }))
   on('ui.close', () => ({ value: undefined }))
@@ -257,3 +270,85 @@ test('a chat that starts on a model wears its suit without any /model switch', a
   expect(plain).not.toContain(GREY)
   expect(plain).not.toContain(BLUE)
 })
+
+const EYE = '#1a1a1a'
+const SWEAT = '#7fc4f0'
+const ORANGE = '#f08a24' // the pumpkin
+
+test('each running subagent brings a helper crab, gone once it returns', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  // Clawd has two eyes, each helper two more.
+  const eyes = async () => {
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    await ui.advance(100)
+    const n = (JSON.stringify(await ui.drawn({ in: 'clawd' })).match(new RegExp(EYE, 'g')) ?? []).length
+    await ui.unmount()
+    return n
+  }
+  let during = 0
+  on('tool.call', async () => {
+    during = await eyes()
+    return { result: {} }
+  })
+
+  await $.tool.call({ tool: 'Agent', description: 'look', prompt: 'look around' } as never)
+  expect(during).toBe(4)
+  expect(await eyes()).toBe(2)
+})
+
+test('commits and test runs get a word when they finish, passed or failed', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  // Stands for Bash: a command with "fail" in it fails.
+  on('tool.call', (_, e) => (String((e as { command?: unknown }).command).includes('fail') ? { result: {}, isError: true } : { result: {} }) as never)
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  await ui.advance(100)
+  const said = async (command: string) => {
+    await $.tool.call({ tool: 'Bash', command } as never)
+    await ui.advance(100)
+    return (await ui.find({ type: 'Text', text: /Committed|Tests (passed|failed)/, in: 'clawd' }))?.text
+  }
+
+  expect(await said('git commit -m "hi"')).toMatch(/Committed/)
+  expect(await said('npm test')).toMatch(/Tests passed/)
+  expect(await said('pytest # fail')).toMatch(/Tests failed/)
+  await ui.unmount()
+})
+
+test('a turn past two minutes makes Clawd sweat', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  await $.prompt.submit({ text: 'a big job' } as never)
+  await ui.advance(60_000)
+  expect(JSON.stringify(await ui.drawn({ in: 'clawd' }))).not.toContain(SWEAT)
+  await ui.advance(61_000)
+  expect(JSON.stringify(await ui.drawn({ in: 'clawd' }))).toContain(SWEAT)
+  await ui.unmount()
+})
+
+test('Clawd dresses for the season between jobs', async ($, on) => {
+  const clock = mock.clock(on, { now: new Date(2026, 9, 28).getTime() })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  const drawn = async () => {
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    await ui.advance(100)
+    const tree = JSON.stringify(await ui.drawn({ in: 'clawd' }))
+    await ui.unmount()
+    return tree
+  }
+
+  expect(await drawn()).toContain(ORANGE) // a pumpkin for Halloween
+  await clock.set(new Date(2026, 10, 3).getTime())
+  const plain = await drawn()
+  expect(plain).not.toContain(ORANGE)
+  expect(plain).not.toContain(RED)
+  await clock.set(new Date(2026, 11, 10).getTime())
+  expect(await drawn()).toContain(RED) // a Santa hat
+  await clock.set(new Date(2027, 1, 9).getTime())
+  expect(await drawn()).toContain(STAR_YELLOW) // Tết: the mai blossom
+})
+
+const STAR_YELLOW = '#f5c542'
