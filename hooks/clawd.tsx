@@ -166,7 +166,14 @@ const SUITS: Record<string, { rows: string[]; eyes?: string; paint?: string[] }>
 const DEMO = Object.keys(COSTUMES)
 const DEMO_TICKS = 30
 
-type Mode = 'idle' | 'walk' | 'held' | 'fall' | 'jump' | 'stunned' | 'sleep' | 'wave' | 'sad' | 'fly'
+type Mode = 'idle' | 'walk' | 'held' | 'fall' | 'jump' | 'stunned' | 'sleep' | 'wave' | 'sad' | 'fly' | 'dive' | 'under' | 'dig'
+
+// A clone of Clawd: splitting off and diving into the ground, off to a session Claude started, or back from one,
+// digging up and walking over to merge in. `wait` holds it back, so clones sent together go one after another.
+type Clone = { phase: 'split' | 'dive' | 'dig' | 'walk'; x: number; y: number; vy: number; dir: -1 | 1; from: number; wait: number; gone?: boolean }
+// How far below the strip Clawd goes to be out of sight, hats and all.
+const DEEP = 3
+const DIRT = ['#c98a3c', '#6b5b52']
 
 type World = {
   props: PetProps
@@ -212,6 +219,10 @@ type World = {
   nextMissile: number
   missiles: Shot[]
   sparks: Spark[]
+  clones: Clone[]
+  seenCloned: number
+  seenMerged: number
+  seenTunnel: number
 }
 
 const CHATTER = [
@@ -268,6 +279,22 @@ function setMode(w: World, mode: Mode, ticks = 0) {
 }
 
 const isTyping = (w: World) => w.t - w.typedAt < TYPING
+
+const inGround = (w: World) => w.mode === 'dive' || w.mode === 'under' || w.mode === 'dig'
+
+// A hop that comes down through the ground: up it goes, then it sinks until it reaches `bottom`. True once there.
+function sink(b: { y: number; vy: number }, ground: number, bottom: number): boolean {
+  b.vy = b.vy < 0 || b.y < ground ? b.vy + GRAVITY : 0.5
+  b.y += b.vy
+  return b.y >= bottom
+}
+
+// Dirt thrown up on both sides of whatever goes through the ground at `x`.
+function dirt(w: World, x: number, rows: number) {
+  for (const dx of [-1, SPRITE_W]) {
+    w.sparks.push({ x: x + dx, y: rows - 1, vx: dx < 0 ? -0.4 : 0.4, vy: -0.5, g: 0.12, life: 6, ch: pick(['.', ',', '*']), color: pick(DIRT) })
+  }
+}
 
 function wake(w: World) {
   w.lastActive = w.t
@@ -379,7 +406,7 @@ function step(w: World, cols: number, rows: number) {
   if (p.hero !== (w.morph ? w.morph.dir === 1 : w.isHero)) {
     w.morph = { dir: p.hero ? 1 : -1, at: w.t }
     wake(w)
-    if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump') setMode(w, w.y < ground ? 'fly' : 'idle')
+    if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump' && !inGround(w)) setMode(w, w.y < ground ? 'fly' : 'idle')
   }
   if (w.morph) {
     const k = w.t - w.morph.at
@@ -401,13 +428,27 @@ function step(w: World, cols: number, rows: number) {
     }
   }
 
+  // In a session started from another, Clawd digs up into it, and dives back home when its work is done.
+  if (p.tunnel && p.tunnel.id !== w.seenTunnel) {
+    w.seenTunnel = p.tunnel.id
+    wake(w)
+    w.face = 0
+    if (p.tunnel.kind === 'dive') {
+      w.vy = -1
+      setMode(w, 'dive')
+    } else {
+      w.y = rows + DEEP
+      setMode(w, 'dig')
+    }
+  }
+
   if (p.say && p.say.id !== w.seenSay) {
     w.seenSay = p.say.id
     wake(w)
     say(w, p.say.text)
     // The hero zooms up for good news rather than hopping, and keeps flying through bad.
     if (w.isHero && p.say.kind === 'done') w.targetY = -p.offset + 1
-    else if (w.mode !== 'held' && w.mode !== 'fall' && !w.isHero) {
+    else if (w.mode !== 'held' && w.mode !== 'fall' && !w.isHero && !inGround(w)) {
       if (p.say.kind === 'done') jump(w)
       if (p.say.kind === 'error') setMode(w, 'sad', 25)
     }
@@ -512,6 +553,18 @@ function step(w: World, cols: number, rows: number) {
       break
     case 'sleep':
       break
+    case 'dive':
+      if (w.y >= ground && w.t % 2 === 0) dirt(w, w.x, rows)
+      if (sink(w, ground, rows + DEEP)) setMode(w, 'under')
+      break
+    case 'under':
+      w.y = rows + DEEP
+      break
+    case 'dig':
+      w.y = Math.max(ground, w.y - 0.5)
+      if (w.t % 2 === 0) dirt(w, w.x, rows)
+      if (w.y <= ground) setMode(w, 'idle')
+      break
     case 'fly': {
       // The hero holds still while transforming, else flies to a spot anywhere from the top of the bars to the ground.
       if (w.morph) break
@@ -563,8 +616,53 @@ function step(w: World, cols: number, rows: number) {
         setMode(w, 'walk')
       }
   }
+  // Clones: one splits off Clawd for each session Claude starts, hops and dives into the ground; one digs up for each
+  // that comes back, walks over and merges in. Several at once go half a second apart.
+  for (let i = 0; w.seenCloned < p.cloned; w.seenCloned++, i++) w.clones.push({ phase: 'split', x: 0, y: ground, vy: 0, dir: 1, from: -1, wait: i * 5 })
+  for (let i = 0; w.seenMerged < p.merged; w.seenMerged++, i++) {
+    // It comes up well clear of Clawd, on the side with more room.
+    const spot = w.x > maxX / 2 ? rand(0, Math.max(0, w.x - SPRITE_W - 6)) : rand(Math.min(maxX, w.x + SPRITE_W + 6), maxX)
+    w.clones.push({ phase: 'dig', x: Math.round(spot), y: rows, vy: 0, dir: 1, from: 0, wait: i * 5 })
+  }
+  for (const c of w.clones) {
+    if (c.wait > 0) {
+      c.wait--
+      continue
+    }
+    if (c.phase === 'split') {
+      // It starts as Clawd, then slides out to the side with room.
+      if (c.from < 0) {
+        c.from = c.x = w.x
+        c.dir = w.x + SPRITE_W * 2 + 2 <= maxX ? 1 : -1
+      }
+      c.x += c.dir
+      if (Math.abs(c.x - c.from) >= SPRITE_W + 2) {
+        c.phase = 'dive'
+        c.vy = -1
+      }
+    } else if (c.phase === 'dive') {
+      if (c.y >= ground && w.t % 2 === 0) dirt(w, c.x, rows)
+      c.gone = sink(c, ground, rows)
+    } else if (c.phase === 'dig') {
+      c.y = Math.max(ground, c.y - 0.5)
+      if (w.t % 2 === 0) dirt(w, c.x, rows)
+      if (c.y <= ground) c.phase = 'walk'
+    } else if (w.t % 2 === 0) {
+      c.dir = w.x < c.x ? -1 : 1
+      c.x += Math.sign(w.x - c.x)
+      if (Math.abs(w.x - c.x) < 1) {
+        c.gone = true
+        for (let k = 0; k < 6; k++) w.sparks.push({ x: w.x + k * 2 - 1, y: w.y - 1, vx: 0, vy: -0.3, g: 0, life: 8, ch: '✦', color: STAR })
+        wake(w)
+        say(w, pick(['Welcome back, me!', 'All of me, together again.', 'Clone merged. Job done!']), 30)
+        if (w.mode === 'idle' && !w.isHero) jump(w)
+      }
+    }
+  }
+  w.clones = w.clones.filter(c => !c.gone)
+
   if (w.mode === 'fly') w.y = Math.min(Math.max(w.y, -p.offset), ground)
-  else if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump') w.y = ground
+  else if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump' && !inGround(w)) w.y = ground
   w.x = Math.min(Math.max(w.x, 0), maxX)
   w.prevX = w.x
   w.prevY = w.y
@@ -638,14 +736,24 @@ function pointer(w: World, e: ClientPointerEvent) {
 const STAND = '.o.o..o.o.'
 const WALK_LEGS = [STAND, '...o....o.', STAND, '.o....o...']
 
+// The eyes row, looking the way `f` says (-1 left, 0 ahead, 1 right).
+const eyesRow = (f: number) => '.' + 'oooooooo'.split('').map((c, i) => (i === 1 + f ? 'L' : i === 6 + f ? 'R' : c)).join('') + '.'
+
+// A clone's rows: crawling while it splits off or walks back, arms up through the air and the ground.
+function cloneRows(w: World, c: Clone): string[] {
+  const top = '.oooooooo.'
+  if (c.phase === 'dive' || c.phase === 'dig') return [top, 'o' + eyesRow(0).slice(1, 9) + 'o', '.oooooooo.', STAND]
+  return [top, eyesRow(c.dir), 'oooooooooo', WALK_LEGS[Math.floor(w.t / 2) % 4] ?? STAND]
+}
+
 // '.' empty, 'o' body, 'L'/'R' eyes. Rows: top of the body, eyes, arms, legs.
 function spriteRows(w: World): string[] {
   const f = w.face
   const top = '.oooooooo.'
-  const eyes = '.' + 'oooooooo'.split('').map((c, i) => (i === 1 + f ? 'L' : i === 6 + f ? 'R' : c)).join('') + '.'
+  const eyes = eyesRow(f)
   const flip = Math.floor(w.t / 2) % 2 === 0
 
-  if (w.mode === 'held' || w.mode === 'fall' || w.mode === 'jump') {
+  if (w.mode === 'held' || w.mode === 'fall' || w.mode === 'jump' || inGround(w)) {
     // arms up, legs kicking while held
     const legs = w.mode === 'held' && !flip ? '..o.oo.o..' : STAND
     return [top, 'o' + eyes.slice(1, 9) + 'o', '.oooooooo.', legs]
@@ -699,12 +807,13 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       props,
       t: 0,
       x: 0,
-      y: 0,
+      // Gone home through the ground already: it stays under until it digs up again.
+      y: props.tunnel?.kind === 'dive' ? props.rows + DEEP : 0,
       vx: 0,
       vy: 0,
       prevX: 0,
       prevY: 0,
-      mode: 'idle',
+      mode: props.tunnel?.kind === 'dive' ? 'under' : 'idle',
       until: 0,
       face: 0,
       targetX: 0,
@@ -734,6 +843,11 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       nextMissile: 30,
       missiles: [],
       sparks: [],
+      clones: [],
+      seenCloned: props.cloned,
+      seenMerged: props.merged,
+      // A dig still plays when the bar draws after it was asked for; a dive is already over (see mode).
+      seenTunnel: props.tunnel?.kind === 'dive' ? props.tunnel.id : 0,
     }
     say(w, timeGreeting(), 60)
     s.every(TICK_MS, () => {
@@ -896,24 +1010,32 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
           <Text wrap="truncate-end">{w.bubble}</Text>
         </Box>
       )}
-      {thinking && y > -props.offset && (
+      {thinking && y > -props.offset && !inGround(w) && (
         <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left - 3 - dots.n + dotsShift)}>
           <Text color={props.effort === 'max' ? STAR : BODY}>{thinking}</Text>
         </Box>
       )}
-      {fx && y > -props.offset && (
+      {fx && y > -props.offset && !inGround(w) && (
         <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left + fx.dx)}>
           <Text color={fx.color}>{fx.text}</Text>
         </Box>
       )}
+      {/* Rows below the strip are underground, out of sight: cut off as Clawd and its clones dig and dive. */}
       <Box position="absolute" top={y + props.offset} left={Math.max(0, left)} flexDirection="column">
-        {spriteRows(w).map(crabRow)}
+        {spriteRows(w).slice(0, Math.max(0, props.rows - y)).map(crabRow)}
       </Box>
       {pieces.map((piece, i) => (
         <Box key={`c${i}`} position="absolute" top={y + piece.oy + props.offset} left={left + piece.ox} flexDirection="column">
-          {piece.rows.map(row(PALETTE))}
+          {piece.rows.slice(0, Math.max(0, props.rows - y - piece.oy)).map(row(PALETTE))}
         </Box>
       ))}
+      {w.clones
+        .filter(c => c.wait <= 0)
+        .map((c, i) => (
+          <Box key={`k${i}`} position="absolute" top={Math.round(c.y) + props.offset} left={Math.max(0, Math.round(c.x))} flexDirection="column">
+            {cloneRows(w, c).slice(0, Math.max(0, props.rows - Math.round(c.y))).map(crabRow)}
+          </Box>
+        ))}
       {helperXs.map((hx, i) => (
         <Box key={`h${i}`} position="absolute" top={props.rows - 2 + props.offset} left={hx} flexDirection="column">
           {['LooR', (w.t + i) % 4 < 2 ? 'o..o' : '.oo.'].map(helperRow)}

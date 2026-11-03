@@ -715,6 +715,117 @@ test('waiting on you, Clawd holds up a question mark, a bell or a sign, and take
   await ui.unmount()
 })
 
+// Every crab drawn in full size has two dark eyes; a crab underground shows none.
+const EYES = /"backgroundColor":"#1a1a1a"/g
+const crabsIn = (tree: unknown) => (JSON.stringify(tree).match(EYES) ?? []).length / 2
+// The crabs on the bar over two ticks, so a blink does not hide one.
+async function crabs(ui: { advance: (ms: number) => Promise<void>; drawn: (s?: { in?: string }) => Promise<unknown> }) {
+  let n = 0
+  for (let i = 0; i < 2; i++) {
+    await ui.advance(100)
+    n = Math.max(n, crabsIn(await ui.drawn({ in: 'clawd' })))
+  }
+  return n
+}
+type On = Parameters<Parameters<typeof test>[1]>[1]
+// The plugin's store, shared by every session: kept here so the test can look in.
+function tunnelStore(on: On, entries: Record<string, unknown> = {}) {
+  const kept = { ...entries }
+  on('store.get', (_, e) => ({ value: kept[e.key] }) as never)
+  on('store.set', (_, e) => {
+    kept[e.key] = e.value
+    return { value: undefined } as never
+  })
+  return kept
+}
+// What session.start reads, for a session called `id` that began at `startedAt`.
+function standIns(on: On, id: string, startedAt: number) {
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('command.register', () => ({ value: { command: 'clawd' } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: 'claude-fable-5-1' }))
+  on('session.id', () => ({ value: id }))
+  on('session.usage', () => ({ value: { startedAt, context: {}, rateLimits: [] } }) as never)
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('tool.call', () => ({ result: {} }))
+}
+
+test('starting a session splits off a clone of Clawd that dives into the ground, off to work there', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  const store = tunnelStore(on)
+  standIns(on, 'parent', 0)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  expect(await crabs(ui)).toBe(1)
+
+  // A card Claude only proposes starts nothing.
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 't' } as never)
+  expect(await crabs(ui)).toBe(1)
+
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'user_asked', title: 't' } as never)
+  expect(await crabs(ui)).toBe(2)
+  await ui.advance(5000)
+  expect(await crabs(ui)).toBe(1)
+  expect(store.out).toEqual([{ session: 'parent', at: expect.any(Number) }])
+  await ui.unmount()
+})
+
+test('in a session started from another, Clawd digs up, then dives home when the work is done', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  const store = tunnelStore(on, { out: [{ session: 'parent', at: NO_HOLIDAY - 5000 }] })
+  standIns(on, 'child', NO_HOLIDAY - 1000)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(store.out).toEqual([])
+
+  // It starts underground and climbs out.
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  expect(await crabs(ui)).toBe(0)
+  await ui.advance(3000)
+  expect(await crabs(ui)).toBe(1)
+
+  await $.prompt.submit({ text: 'go' } as never)
+  await $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false } as never)
+  await ui.advance(4000)
+  expect(await crabs(ui)).toBe(0)
+  expect(store.back).toEqual([{ session: 'parent', at: expect.any(Number) }])
+
+  // Another prompt brings it back up, as a plain Clawd of this session now.
+  await $.prompt.submit({ text: 'more' } as never)
+  await ui.advance(3000)
+  expect(await crabs(ui)).toBe(1)
+  await $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false } as never)
+  await ui.advance(4000)
+  expect(await crabs(ui)).toBe(1)
+  await ui.unmount()
+})
+
+test('a clone coming home digs up, walks over and merges back into Clawd', async ($, on) => {
+  const clock = mock.clock(on, { now: NO_HOLIDAY })
+  const store = tunnelStore(on, { back: [{ session: 'parent', at: NO_HOLIDAY }, { session: 'other', at: NO_HOLIDAY }] })
+  standIns(on, 'parent', 0)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  expect(await crabs(ui)).toBe(1)
+  // The session looks in the tunnel every second.
+  await clock.advance(1100)
+  let most = 0
+  let isWelcomed = false
+  for (let i = 0; i < 250; i++) {
+    await ui.advance(100)
+    const tree = await ui.drawn({ in: 'clawd' })
+    most = Math.max(most, crabsIn(tree))
+    isWelcomed ||= /Welcome back, me!|All of me, together again\.|Clone merged\. Job done!/.test(JSON.stringify(tree))
+  }
+  expect(most).toBe(2)
+  expect(isWelcomed).toBe(true)
+  expect(await crabs(ui)).toBe(1)
+  // Only its own clone: the other session's stays in the tunnel.
+  expect(store.back).toEqual([{ session: 'other', at: NO_HOLIDAY }])
+  await ui.unmount()
+})
+
 // The pet's module reads the real clock, so the reminder schedule is checked on its own.
 test('meal reminders come due in the hour after each meal starts, once a day', () => {
   const at = (h: number, m: number, day = 3) => mealDue(new Date(2026, 10, day, h, m))

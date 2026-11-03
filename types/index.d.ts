@@ -1,5 +1,7 @@
 export type Mood = 'idle' | 'working'
 export type Say = { id: number; text: string; kind: 'info' | 'done' | 'error' }
+// Clawd itself going through the ground: digging up into a session started from another, or diving home from it.
+export type Tunnel = { id: number; kind: 'dig' | 'dive' }
 // offset: rows the region reaches above the crab's strip (over the other bars) while it is lifted.
 // costume: what it wears; isAutoCostume: chosen from Claude's work rather than by /clawd cosplay;
 // restCostume: the holiday outfit or else the current model's suit, worn between jobs while costumes follow Claude's work.
@@ -7,6 +9,8 @@ export type Say = { id: number; text: string; kind: 'info' | 'done' | 'error' }
 // typed: edits made in the prompt box so far; a change means you just typed.
 // effort: the effort level of the latest turn (low to max), null when the model has none.
 // hero: the last prompt said "ultracode": Clawd suits up in white armor and flies.
+// cloned, merged: clones sent off into sessions Claude started, and clones back from them, so far.
+// tunnel: the latest dig or dive of Clawd itself, null when it has made none.
 export type PetProps = {
   mood: Mood
   say: Say | null
@@ -20,6 +24,9 @@ export type PetProps = {
   typed: number
   effort: string | null
   hero: boolean
+  cloned: number
+  merged: number
+  tunnel: Tunnel | null
 }
 
 declare module 'claude-code' {
@@ -45,6 +52,12 @@ declare module 'claude-code' {
       hero: boolean
       // Rows the other bars above Clawd take, as the probe measured them (0 before it has).
       barRows: number
+      // Clones sent off into sessions Claude started, and clones back from them, so far.
+      cloned: number
+      merged: number
+      tunnel: Tunnel | null
+      // In a session started from another: the session Clawd came from, until it goes back.
+      home: string | null
     }
   }
 }

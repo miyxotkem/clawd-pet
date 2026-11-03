@@ -20,6 +20,36 @@ const typed = atom({ plugin: 'clawd-pet', key: 'typed' } as const, 0)
 const effort = atom({ plugin: 'clawd-pet', key: 'effort' } as const, null)
 const hero = atom({ plugin: 'clawd-pet', key: 'hero' } as const, false)
 const barRows = atom({ plugin: 'clawd-pet', key: 'barRows' } as const, 0)
+const cloned = atom({ plugin: 'clawd-pet', key: 'cloned' } as const, 0)
+const merged = atom({ plugin: 'clawd-pet', key: 'merged' } as const, 0)
+const tunnel = atom({ plugin: 'clawd-pet', key: 'tunnel' } as const, null)
+const home = atom({ plugin: 'clawd-pet', key: 'home' } as const, null)
+
+// The tunnel between sessions is the plugin's store, one file every session on this machine shares: `out` holds
+// clones on their way to a session Claude started, `back` clones on their way home, each with the session it is for.
+type Trip = { session: string; at: number }
+// A new session takes a clone sent this recently; older ones were never picked up.
+const TRIP_MS = 120_000
+const STARTS_SESSION = ['mcp__ccd_session__start_session', 'mcp__ccd_session__hand_off_to_session']
+
+async function trips($: StateDollar, key: 'out' | 'back'): Promise<Trip[]> {
+  const value = await $.store.get(key)
+  return Array.isArray(value) ? value.filter((t): t is Trip => typeof t?.session === 'string' && typeof t?.at === 'number') : []
+}
+
+// shortcut: read from the call, not the app's own word on it: a card Claude only proposes starts nothing, and an
+// offer you answered "Do it here" is told by that wording in the result; upgrade if the result gains a field for it.
+function startedSession(e: { tool: string; initiation?: unknown }, result: unknown): boolean {
+  const r = result as { isError?: boolean; deny?: unknown }
+  if (r.isError || r.deny) return false
+  if (e.tool.endsWith('hand_off_to_session')) return true
+  return e.initiation !== 'own_initiative' && !/do it here/i.test(JSON.stringify(result))
+}
+
+// Clawd itself digs up or dives down.
+function goThrough($: StateDollar, kind: 'dig' | 'dive') {
+  return update($, tunnel, prev => ({ id: (prev?.id ?? 0) + 1, kind }))
+}
 
 // Ultracode's switch in /effort, as its output reports it: "Ultracode on", "· Ultracode off".
 const ULTRACODE = /\bultracode\W+(on|off)\b/i
@@ -175,7 +205,35 @@ export const register: Register = on => {
     let level = await readSetting($, 'effortLevel')
     await update($, hero, () => ultracode === true)
     if (levelOf(level)) await update($, effort, () => levelOf(level))
+    const me = await $.session.id().catch(() => '')
+    // A brand-new session (not resumed, not a reload of the mod) takes a clone another session just sent off: Clawd
+    // digs up here, and goes back there when the work is done.
+    try {
+      const now = await $.clock.now()
+      if (me && !(await read($, home)) && now - (await $.session.usage()).startedAt < TRIP_MS) {
+        const out = (await trips($, 'out')).filter(t => now - t.at < TRIP_MS)
+        const trip = out.find(t => t.session !== me)
+        if (trip) {
+          await $.store.set('out', out.filter(t => t !== trip))
+          await update($, home, () => trip.session)
+          await goThrough($, 'dig')
+        }
+      }
+    } catch {
+      // No tunnel: Clawd starts here as it always has.
+    }
     $.clock.every(1000, async () => {
+      // Clones coming home from the sessions Claude started: each digs up here and merges back in.
+      try {
+        const back = await trips($, 'back')
+        const mine = back.filter(t => t.session === me)
+        if (me && mine.length) {
+          await $.store.set('back', back.filter(t => t.session !== me))
+          await update($, merged, n => n + mine.length)
+        }
+      } catch {
+        // The store is unreadable: they stay in the tunnel until it is not.
+      }
       // Only a change counts: /effort in the terminal may switch either without touching the settings.
       const ultracodeNow = await readSetting($, 'ultracode')
       if (ultracodeNow !== ultracode) {
@@ -253,6 +311,8 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     await update($, mood, () => 'working')
     await update($, activity, () => 'thinker')
+    // Gone home through the ground: back up for more work.
+    if ((await read($, tunnel))?.kind === 'dive') await goThrough($, 'dig')
     await say($, pick(START_LINES))
 
     return next(e)
@@ -292,7 +352,8 @@ export const register: Register = on => {
       await say($, line)
     }
     const asksYou = ASKS_YOU.includes(e.tool)
-    if (e.tool !== 'Agent' && !moment && !asksYou) return next(e)
+    const startsSession = STARTS_SESSION.includes(e.tool)
+    if (e.tool !== 'Agent' && !moment && !asksYou && !startsSession) return next(e)
 
     // A helper crab walks beside Clawd while each subagent runs.
     if (e.tool === 'Agent') await update($, helpers, n => n + 1)
@@ -300,6 +361,18 @@ export const register: Register = on => {
     try {
       const result = await next(e)
       if (moment && !result.deny) await say($, result.isError ? moment.fail : moment.ok, result.isError ? 'error' : 'done')
+      // A session started: a clone of Clawd splits off and heads there through the ground.
+      if (startsSession && startedSession(e, result)) {
+        try {
+          const now = await $.clock.now()
+          const out = (await trips($, 'out')).filter(t => now - t.at < TRIP_MS)
+          await $.store.set('out', [...out, { session: await $.session.id(), at: now }])
+          await update($, cloned, n => n + 1)
+          await say($, pick(['Splitting off a clone!', 'Clone, go dig in!', 'Two of me now!']))
+        } catch {
+          // No tunnel: the session starts without a clone.
+        }
+      }
 
       return result
     } finally {
@@ -325,7 +398,21 @@ export const register: Register = on => {
     await update($, helpers, () => 0)
     await update($, mood, () => 'idle')
     await update($, activity, () => (e.reason === 'answer' ? 'rocket' : null))
-    if (e.reason === 'answer') await say($, pick(['Done! ✓', 'All finished!', 'Ta-da!']), 'done')
+    // A clone in a session started from another: the work is done, so it dives back home and merges in there.
+    const from = await read($, home)
+    if (from) {
+      await update($, home, () => null)
+      try {
+        const now = await $.clock.now()
+        // Clones for a session that never came to collect them are dropped after a day.
+        const back = (await trips($, 'back')).filter(t => now - t.at < 86_400_000)
+        await $.store.set('back', [...back, { session: from, at: now }])
+      } catch {
+        // No tunnel home: it still dives, and that session never sees it come back.
+      }
+      await goThrough($, 'dive')
+      await say($, e.reason === 'answer' ? 'Done! Heading home.' : 'Heading home.', e.reason === 'answer' ? 'done' : 'info')
+    } else if (e.reason === 'answer') await say($, pick(['Done! ✓', 'All finished!', 'Ta-da!']), 'done')
     else if (e.reason === 'aborted') await say($, 'Okay, stopping.')
     else await say($, 'Hmm, that went wrong.', 'error')
 
@@ -391,6 +478,9 @@ export const register: Register = on => {
                 typed: await read($, typed),
                 effort: await read($, effort),
                 hero: await read($, hero),
+                cloned: await read($, cloned),
+                merged: await read($, merged),
+                tunnel: await read($, tunnel),
               }}
             />
           </Box>
