@@ -1,6 +1,6 @@
 {
   "name": "clawd-pet",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A pixel Claude crab above the prompt: walks, talks, reacts to Claude's work, and can be dragged, thrown and stunned",
   "types": "./types/index.d.ts"
 }
