@@ -66,7 +66,8 @@ const COSTUMES: Record<string, Piece[]> = {
   ],
   parachute: [{ ox: -1, oy: -3, rows: ['.BBBBBBBBBB.', 'BBccccccccBB', '.k........k.'] }],
   // The model suits: worn when /model switches to Opus 5.5 (spidercrab), Haiku 5.5 (batcrab) or Sonnet 5.5 (captain).
-  spidercrab: [{ ox: 10, oy: -2, rows: ['..w', '.w.', 'w..'] }],
+  // The web shoots off to the left, clear of what Clawd says above its right side.
+  spidercrab: [{ ox: -3, oy: -2, rows: ['w..', '.w.', '..w'] }],
   batcrab: [
     { ox: 1, oy: -1, rows: ['k......k'] },
     { ox: 3, oy: 2, rows: ['yyyy'] },
@@ -101,6 +102,14 @@ const BANDAGE: Piece = { ox: 6, oy: 0, rows: ['twt'] }
 const LONG_TURN = 1200
 // Clawd types along for this many ticks (3 seconds) after your last edit in the prompt box.
 const TYPING = 30
+// Thinking dots by effort level: how many fill up, and how many ticks each takes.
+const EFFORT_DOTS: Record<string, { n: number; every: number }> = {
+  low: { n: 1, every: 8 },
+  medium: { n: 2, every: 6 },
+  high: { n: 3, every: 4 },
+  xhigh: { n: 4, every: 3 },
+  max: { n: 5, every: 2 },
+}
 
 // Suits recolour the crab itself, row by row (top, eyes, arms, legs), so every pose still shows through.
 // `paint` gives body cells a colour of their own ('.' keeps the row's); eye cells are never painted over.
@@ -537,9 +546,10 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     fx = { text: "'", color: SWEAT, dx: flip ? -1 : SPRITE_W }
   } else if (isTyping(w) && w.mode === 'idle') {
     fx = { text: flip ? 'tap' : ' tik', color: BODY, dx: SPRITE_W - 1 }
-  } else if (w.props.mood === 'working' && w.mode !== 'held' && !costume) {
-    fx = { text: ['·  ', '·· ', '···'][Math.floor(w.t / 4) % 3] ?? '', color: BODY, dx: SPRITE_W - 1 }
   }
+  // Thinking dots left of the head while Claude works, clear of every costume: more and faster the harder it thinks.
+  const dots = EFFORT_DOTS[props.effort ?? ''] ?? { n: 3, every: 4 }
+  const thinking = props.mood === 'working' && w.mode !== 'held' ? '·'.repeat(Math.floor(w.t / dots.every) % (dots.n + 1)).padStart(dots.n) : ''
 
   const showBubble = w.bubble && w.t < w.bubbleUntil
   // A one-line bubble beside the crab, on whichever side has room, clear of what it holds.
@@ -558,6 +568,11 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       {showBubble && (
         <Box position="absolute" top={bubbleTop + props.offset} left={bubbleLeft} width={bubbleW} borderStyle="round" borderColor={BODY} paddingX={1}>
           <Text wrap="truncate-end">{w.bubble}</Text>
+        </Box>
+      )}
+      {thinking && y > -props.offset && (
+        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left - 3 - dots.n)}>
+          <Text color={props.effort === 'max' ? STAR : BODY}>{thinking}</Text>
         </Box>
       )}
       {fx && y > -props.offset && (

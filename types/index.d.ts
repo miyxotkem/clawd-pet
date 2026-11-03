@@ -5,6 +5,7 @@ export type Say = { id: number; text: string; kind: 'info' | 'done' | 'error' }
 // restCostume: the holiday outfit or else the current model's suit, worn between jobs while costumes follow Claude's work.
 // helpers: subagents running now, each drawn as a small crab beside Clawd.
 // typed: edits made in the prompt box so far; a change means you just typed.
+// effort: the effort level of the latest turn (low to max), null when the model has none.
 export type PetProps = {
   mood: Mood
   say: Say | null
@@ -16,6 +17,7 @@ export type PetProps = {
   restCostume: string | null
   helpers: number
   typed: number
+  effort: string | null
 }
 
 declare module 'claude-code' {
@@ -35,6 +37,8 @@ declare module 'claude-code' {
       helpers: number
       // Edits made in the prompt box so far.
       typed: number
+      // The effort level of the latest turn: low, medium, high, xhigh or max.
+      effort: string | null
     }
   }
 }

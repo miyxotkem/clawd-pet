@@ -26,6 +26,7 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 
 - **Walks and talks.** Clawd crawls around its bar, blinks, chats now and then, greets you by time of day, and falls asleep when things are quiet.
 - **Reacts to Claude.** It says "On it!" when you send a prompt, comments on the tools Claude uses, taps its arms while Claude works, and jumps when a turn finishes. After two minutes on one turn it starts to sweat, and when a turn fails it wears a bandage.
+- **Thinks as hard as Claude.** While Claude works, thinking dots fill up beside Clawd's head: one slow dot on low effort, up to five quick yellow ones on max. When you change the effort level, Clawd says so on the next turn, with a jump when it goes up.
 - **Types along.** While you type in the prompt box, Clawd stops wandering and taps away with you, then goes back to its business a few seconds after you stop.
 - **Helper crabs.** Each subagent Claude starts brings a small crab that walks beside Clawd until the subagent returns (up to three at once).
 - **Commits, pushes and tests.** Clawd puts on a party hat for `git commit`, launches the rocket for `git push`, and shakes pom-poms while tests run (`npm test`, `pytest`, `cargo test` and the like). When the command finishes it cheers, or looks sad if it failed.

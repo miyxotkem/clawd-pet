@@ -353,6 +353,49 @@ test('Clawd dresses for the season between jobs', async ($, on) => {
 
 const STAR_YELLOW = '#f5c542'
 
+test('the thinking dots follow the effort level, and Clawd says when it changes', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  // Stands for the model: an empty answer, streamed as nothing.
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
+  })
+  // A streaming call runs as its stream is read: read it to the end.
+  const step = async (effort: string, index = 0) => {
+    const stream = $.turn.step({ turnId: 't', index, model: 'claude-opus-5-5', effort, messageCount: 1 } as never) as unknown as AsyncIterable<unknown>
+    for await (const _ of stream);
+  }
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  await $.prompt.submit({ text: 'go' } as never)
+  // The most dots seen over a few fill cycles.
+  const mostDots = async () => {
+    let most = 0
+    for (let i = 0; i < 40; i++) {
+      await ui.advance(100)
+      const dots = await ui.find({ type: 'Text', text: /^ *·+$/, in: 'clawd' })
+      most = Math.max(most, (dots?.text ?? '').trim().length)
+    }
+    return most
+  }
+
+  await step('low')
+  expect(await mostDots()).toBe(1)
+  // A later step of the same turn is no switch, whatever it says.
+  await step('max', 1)
+  expect(await mostDots()).toBe(1)
+
+  await step('max')
+  await ui.advance(100)
+  expect(await ui.find({ type: 'Text', text: /Max effort/, in: 'clawd' })).toBeDefined()
+  expect(await mostDots()).toBe(5)
+
+  await step('low')
+  await ui.advance(100)
+  expect(await ui.find({ type: 'Text', text: /Low effort/, in: 'clawd' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('Clawd types along while you type, and stops a few seconds after', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))

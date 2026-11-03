@@ -17,6 +17,16 @@ const activity = atom({ plugin: 'clawd-pet', key: 'activity' } as const, null)
 const suit = atom({ plugin: 'clawd-pet', key: 'suit' } as const, null)
 const helpers = atom({ plugin: 'clawd-pet', key: 'helpers' } as const, 0)
 const typed = atom({ plugin: 'clawd-pet', key: 'typed' } as const, 0)
+const effort = atom({ plugin: 'clawd-pet', key: 'effort' } as const, null)
+
+// Effort levels, lowest first: how hard Claude is asked to think.
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+// What Clawd says when the level changes between turns.
+function effortLine(from: string, to: string): string {
+  if (EFFORTS.indexOf(to) < EFFORTS.indexOf(from)) return to === 'low' ? 'Low effort. Phew, a quick one.' : `Easing off to ${to} effort.`
+  if (to === 'max') return 'Max effort! Sleeves rolled up.'
+  return `Effort up to ${to}. Let me really think.`
+}
 
 // Keep in step with COSTUMES in clawd.tsx.
 const COSTUME_NAMES = [
@@ -171,6 +181,23 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  // The effort level rides on each model request: note it on a turn's first, and say so when it changed.
+  // turn.step streams, so the hook is a generator that passes the stream through untouched.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined && e.index === 0) {
+      try {
+        const level = typeof e.effort === 'string' && EFFORTS.includes(e.effort) ? e.effort : null
+        const was = await read($, effort)
+        await update($, effort, () => level)
+        if (was && level && was !== level) await say($, effortLine(was, level), EFFORTS.indexOf(level) > EFFORTS.indexOf(was) ? 'done' : 'info')
+      } catch {
+        // Clawd's own bookkeeping never holds up the model's request.
+      }
+    }
+
+    return yield* next(e)
+  })
+
   on('tool.call', async ($, e, next) => {
     const command = (e.tool === 'Bash' || e.tool === 'PowerShell') && typeof e.command === 'string' ? e.command : ''
     const moment = MOMENTS.find(m => m.match.test(command))
@@ -256,6 +283,7 @@ export const register: Register = on => {
                 restCostume: seasonFor(await $.clock.now()) ?? (await read($, suit)),
                 helpers: await read($, helpers),
                 typed: await read($, typed),
+                effort: await read($, effort),
               }}
             />
           </Box>
