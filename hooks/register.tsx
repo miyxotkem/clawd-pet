@@ -5,7 +5,7 @@ import type { Say } from '../types'
 
 // Rows the bar above the prompt takes: the 4-row crab plus two for hats, stars and z's.
 const ROWS = 6
-// How many rows the crab may rise over the bars above while their height is unmeasured: the most it can fall from.
+// How many rows the crab may always rise over the bars above; taller bars, as the probe measures them, let it rise further.
 const LIFT = 6
 
 const mood = atom({ plugin: 'clawd-pet', key: 'mood' } as const, 'idle')
@@ -264,9 +264,8 @@ export const register: Register = on => {
     const chosen = await read($, cosplay)
     const isAutoCostume = chosen === 'auto'
     const costume = isAutoCostume ? await read($, activity) : chosen === 'off' ? null : chosen
-    // Lifted, the crab may rise as high as the bars above reach, never past the band's top.
-    // shortcut: 0 measured rows reads as not yet measured and falls back to LIFT, so with no bars above it can still rise LIFT rows.
-    const reach = (await read($, barRows)) || LIFT
+    // Lifted, the crab may rise LIFT rows, or as high as the bars above reach when they are taller; never past the band's top.
+    const reach = Math.max(await read($, barRows), LIFT)
     const offset = (await read($, isLifted)) ? Math.max(0, Math.min(reach, e.props.maxRows - ROWS)) : 0
     // Draw the other bars first and sit below them, rather than replacing them.
     const others = await next(e)

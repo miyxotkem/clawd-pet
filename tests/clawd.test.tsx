@@ -396,7 +396,7 @@ test('the thinking dots follow the effort level, and Clawd says when it changes'
   await ui.unmount()
 })
 
-test('Clawd rises only as high as the bars above reach, as the probe measures them', async ($, on) => {
+test('Clawd always rises 6 rows, and as high as taller bars above reach, as the probe measures them', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   // The probe reports the bars' height; hover the strip to lift, and read how tall the region grew.
@@ -411,8 +411,10 @@ test('Clawd rises only as high as the bars above reach, as the probe measures th
     return Number(h)
   }
 
-  // Bars 3 rows tall: 6 rows of strip and 3 above.
-  expect(await liftedHeight(3)).toBe(9)
+  // Short bars never limit the drag: 6 rows of strip and the usual 6 above.
+  expect(await liftedHeight(3)).toBe(12)
+  // Bars 10 rows tall: Clawd can rise over all of them.
+  expect(await liftedHeight(10)).toBe(16)
   // Taller than the band allows: capped at its 20 rows.
   expect(await liftedHeight(30)).toBe(20)
 })
