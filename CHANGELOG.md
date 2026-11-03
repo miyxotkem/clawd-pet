@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2 (2026-11-03)
+
+A hotfix: Clawd's DJ headphones are back.
+
+- **Headphones when idle.** After 40 seconds idle between jobs, Clawd puts its headphones on again. They never showed before: a model suit always took their place, and after a turn that ended well Clawd went straight back to its rest outfit. Now they go on in both cases, with a model suit kept on underneath, so you get a spidercrab or captain with headphones.
+
 ## 1.1.1 (2026-11-03)
 
 A hotfix: Clawd now notices an effort switch as you make it.
