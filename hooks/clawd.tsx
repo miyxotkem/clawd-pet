@@ -110,6 +110,15 @@ const HERO_PODS: Piece[] = [
   { ox: -2, oy: 0, rows: ['gk', 'gk'] },
   { ox: 10, oy: 0, rows: ['kg', 'kg'] },
 ]
+// The hero's thruster flames: diagonal jets out of its lower corners, yellow at the nozzle, red at the tip.
+const THRUST_LONG: Piece[] = [
+  { ox: -3, oy: 3, rows: ['..y', '.p.', 'r..'] },
+  { ox: 10, oy: 3, rows: ['y..', '.p.', '..r'] },
+]
+const THRUST_SHORT: Piece[] = [
+  { ox: -2, oy: 3, rows: ['.y', 'p.'] },
+  { ox: 10, oy: 3, rows: ['y.', '.p'] },
+]
 const VISOR = '#5fd7ff'
 const GLOW = '#fff4ec'
 const WHITE = '#f7f3ee'
@@ -123,8 +132,11 @@ const FLASH = 32
 const MORPH = 40
 const HERO_CHATTER = ['Justice compiles!', 'No bug escapes me.', 'Scanning the codebase from above…', 'Ultra mode: engaged.']
 
-// A missile in flight, and a spark of what it leaves behind: trails, fireworks, blasts and smoke.
-type Shot = { x: number; y: number; vx: number; vy: number; ay: number }
+// A missile in flight: its velocity, the pull on it (ay), how much it turns each tick (curves), how far it
+// weaves side to side, whether it splits in three at the top of its arc, and its age.
+type Shot = { x: number; y: number; vx: number; vy: number; ay: number; turn: number; wobble: number; split: boolean; age: number }
+// A missile that has flown this many ticks bursts where it is.
+const SHOT_LIFE = 160
 type Spark = { x: number; y: number; vx: number; vy: number; g: number; life: number; ch: string; color: string }
 // Thinking dots by effort level: how many fill up, and how many ticks each takes.
 const EFFORT_DOTS: Record<string, { n: number; every: number }> = {
@@ -257,12 +269,41 @@ function armorRows(w: World): number {
   return Math.max(0, SPRITE_H - Math.floor(k / 6))
 }
 
-// Fires a missile from the pod on Clawd's back: straight up at the sky, or arcing down at the ground.
+const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo)
+
+// A missile at `angle` (radians, 0 is right, positive is down) and `speed` cells a tick; rows count half, being twice as tall.
+function shot(x: number, y: number, angle: number, speed: number, more: Partial<Shot> = {}): Shot {
+  return { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed * 0.5, ay: 0, turn: 0, wobble: 0, split: false, age: 0, ...more }
+}
+
+// Fires from a pod on Clawd's back in a direction and a pattern nobody can guess: straight, a long parabola,
+// a curve, a weave, or a cluster that splits at the top of its arc.
 function fire(w: World) {
   const back = w.face < 0 ? 1 : w.face > 0 ? -1 : Math.random() < 0.5 ? -1 : 1
   const x = w.x + (back < 0 ? -2 : SPRITE_W + 1)
-  if (Math.random() < 0.5) w.missiles.push({ x, y: w.y - 1, vx: back * 0.2, vy: -0.4, ay: -0.08 })
-  else w.missiles.push({ x, y: w.y - 1, vx: back * (0.5 + Math.random() * 0.6), vy: -0.7, ay: 0.12 })
+  const y = w.y - 1
+  const up = rand(-Math.PI * 0.95, -Math.PI * 0.05)
+  const kind = Math.floor(Math.random() * 5)
+  if (kind === 0) w.missiles.push(shot(x, y, rand(-Math.PI, Math.PI), rand(0.9, 1.5)))
+  else if (kind === 1) w.missiles.push(shot(x, y, up, rand(1.2, 1.8), { ay: 0.05 }))
+  else if (kind === 2) w.missiles.push(shot(x, y, rand(-Math.PI, Math.PI), rand(0.8, 1.2), { turn: rand(0.05, 0.13) * (Math.random() < 0.5 ? -1 : 1) }))
+  else if (kind === 3) w.missiles.push(shot(x, y, rand(-Math.PI, Math.PI), rand(0.8, 1.2), { wobble: rand(0.9, 1.4) }))
+  else w.missiles.push(shot(x, y, up, rand(1.2, 1.6), { ay: 0.06, split: true }))
+}
+
+// Moves a missile one tick: it turns, falls under its pull, and weaves across its own path.
+function fly(m: Shot) {
+  m.age++
+  if (m.turn) {
+    const c = Math.cos(m.turn)
+    const s = Math.sin(m.turn)
+    ;[m.vx, m.vy] = [m.vx * c - m.vy * 2 * s, (m.vx * s + m.vy * 2 * c) / 2]
+  }
+  m.vy += m.ay
+  const speed = Math.hypot(m.vx, m.vy * 2) || 1
+  const weave = m.wobble * Math.cos(m.age * 0.5)
+  m.x += m.vx - ((m.vy * 2) / speed) * weave
+  m.y += m.vy + (m.vx / speed) * weave * 0.5
 }
 
 // Where a missile ends: fireworks in the sky, a blast with debris and smoke on the ground.
@@ -342,20 +383,27 @@ function step(w: World, cols: number, rows: number) {
     }
   }
 
-  // Missiles fly on, and end where they hit the sky or the ground; sparks drift and fade.
+  // Missiles fly on, and end where they hit the sky or the ground, fly off the side, or burst of old age.
+  // A cluster splits in three at the top of its arc. Sparks drift and fade.
   const top = -p.offset
+  const split: Shot[] = []
   for (const m of w.missiles) {
     w.sparks.push({ x: m.x, y: m.y, vx: 0, vy: 0, g: 0, life: 3, ch: '·', color: GREY })
-    m.x += m.vx
-    m.y += m.vy
-    m.vy += m.ay
+    const rising = m.vy < 0
+    fly(m)
+    if (m.split && rising && m.vy >= 0) {
+      m.age = SHOT_LIFE
+      for (const a of [0.3, 0.5, 0.7]) split.push(shot(m.x, m.y, Math.PI * a, 1.1))
+    }
   }
   w.missiles = w.missiles.filter(m => {
-    if (m.vy < 0 && m.y <= top) burst(w, m.x, top, true)
-    else if (m.vy > 0 && m.y >= rows - 1) burst(w, m.x, rows - 1, false)
+    if (m.y <= top) burst(w, m.x, top, true)
+    else if (m.y >= rows - 1) burst(w, m.x, rows - 1, false)
+    else if (m.age >= SHOT_LIFE) burst(w, m.x, m.y, true)
     else return m.x >= 0 && m.x < cols
     return false
   })
+  w.missiles.push(...split)
   for (const s of w.sparks) {
     s.x += s.vx
     s.y += s.vy
@@ -449,9 +497,10 @@ function step(w: World, cols: number, rows: number) {
         w.targetY = w.t < w.yieldUntil ? ground : minY + Math.floor(Math.random() * Math.max(1, ground - minY))
       }
       // On idle the hero patrols, firing at the sky and the ground.
+      // Every second or two, now and then a salvo of three.
       if (p.mood === 'idle' && w.t >= w.nextMissile) {
-        fire(w)
-        w.nextMissile = w.t + 25 + Math.floor(Math.random() * 40)
+        for (let i = Math.random() < 0.25 ? 3 : 1; i > 0; i--) fire(w)
+        w.nextMissile = w.t + 6 + Math.floor(Math.random() * 18)
       }
       if (p.mood === 'idle' && w.t >= w.nextChat) {
         w.nextChat = w.t + 300 + Math.floor(Math.random() * 300)
@@ -751,12 +800,13 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     ...(costume ? (COSTUMES[costume] ?? []) : []),
     ...(w.mode === 'sad' ? [BANDAGE] : []),
     ...(armor === SPRITE_H ? HERO_PODS : []),
-    // Thrusters under the hero's legs while it flies.
-    ...(w.isHero && !w.morph && w.mode === 'fly' && y < props.rows - SPRITE_H ? [{ ox: 0, oy: SPRITE_H, rows: [flip ? '.y.y..y.y.' : '.p.p..p.p.'] }] : []),
+    // Thrusters at 45 degrees from the hero's lower back corners, down-left and down-right, flickering long and short.
+    ...(w.isHero && !w.morph && w.mode === 'fly' && y < props.rows - SPRITE_H ? (flip ? THRUST_LONG : THRUST_SHORT) : []),
   ]
 
   // Single-cell effects: missiles and their sparks, and while transforming, rings racing out from Clawd over the whole bar.
-  const arrow = (m: Shot) => (m.vy < 0 ? (m.vx < -0.3 ? '↖' : m.vx > 0.3 ? '↗' : '↑') : m.vx < -0.3 ? '↙' : m.vx > 0.3 ? '↘' : '↓')
+  // A missile points the way it flies, in eight directions.
+  const arrow = (m: Shot) => '→↘↓↙←↖↑↗'[(((Math.round(Math.atan2(m.vy * 2, m.vx) / (Math.PI / 4)) % 8) + 8) % 8)] ?? '↑'
   const specks = [
     ...w.sparks.map(s => ({ x: Math.round(s.x), y: Math.round(s.y), ch: s.ch, color: s.color })),
     ...w.missiles.map(m => ({ x: Math.round(m.x), y: Math.round(m.y), ch: arrow(m), color: WHITE })),

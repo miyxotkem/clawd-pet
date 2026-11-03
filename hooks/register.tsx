@@ -21,8 +21,8 @@ const effort = atom({ plugin: 'clawd-pet', key: 'effort' } as const, null)
 const hero = atom({ plugin: 'clawd-pet', key: 'hero' } as const, false)
 const barRows = atom({ plugin: 'clawd-pet', key: 'barRows' } as const, 0)
 
-// The secret word: a prompt with it suits Clawd up as a hero until a prompt without it.
-const ULTRACODE = /\bultracode\b/i
+// Ultracode's switch in /effort, as its output reports it ("Ultracode on") or its arguments ask for it.
+const ULTRACODE = /\bultracode\W+(on|off)\b/i
 
 // Effort levels, lowest first: how hard Claude is asked to think.
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -134,8 +134,25 @@ export const register: Register = on => {
     // Dress for the model the chat starts on (this runs again on each reload of the mod).
     const model = await $.session.model().catch(() => '')
     if (model) await wearSuitFor($, model, false)
+    // A session started with ultracode on (the `ultracode` settings key) starts as the hero.
+    const ultracode = await $.settings.read({ key: 'ultracode' }).catch(() => undefined)
+    await update($, hero, () => ultracode === true)
 
     return next(e)
+  })
+
+  // Ultracode is a switch in /effort (Tab in its slider, or /effort ultracode on|off): Clawd transforms as it flips.
+  on('command.run', { command: 'effort' }, async ($, e, next) => {
+    const result = await next(e)
+    try {
+      // What the command reports wins over what its arguments asked for.
+      const flipped = ULTRACODE.exec(result.text ?? '') ?? ULTRACODE.exec(e.args)
+      if (flipped) await update($, hero, () => flipped[1]?.toLowerCase() === 'on')
+    } catch {
+      // Clawd's bookkeeping never gets in the way of /effort.
+    }
+
+    return result
   })
 
   on('command.run', { command: 'clawd' }, async ($, e) => {
@@ -174,7 +191,6 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     await update($, mood, () => 'working')
     await update($, activity, () => 'thinker')
-    await update($, hero, () => ULTRACODE.test(e.text))
     await say($, pick(START_LINES))
 
     return next(e)

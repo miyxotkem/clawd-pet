@@ -449,10 +449,14 @@ test('Clawd taps on whichever side of its head the outfit leaves clear', async (
 
 const VISOR = '#5fd7ff'
 
-test('ultracode turns Clawd into a flying hero that fires on idle, and a later prompt turns it back', async ($, on) => {
+test('turning ultracode on in /effort makes Clawd a flying hero that fires on idle, and turning it off changes it back', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Text', null, 'other bar'))
   on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  // Stands for /effort: the slider (no arguments) reports what it set, as the command does with them.
+  on('command.run', { command: 'effort' }, (_, e) =>
+    ({ text: e.args ? `Ultracode ${e.args.split(' ')[1]}` : 'Set effort to high · Ultracode on' }) as never,
+  )
   on('turn.complete', () => ({ text: '' }) as never)
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
   await ui.advance(100)
@@ -460,7 +464,13 @@ test('ultracode turns Clawd into a flying hero that fires on idle, and a later p
   const tree = async () => JSON.stringify(await ui.drawn())
   const crab = async () => JSON.stringify(await ui.drawn({ in: 'clawd' }))
 
+  // The word in a prompt is not the switch.
   await $.prompt.submit({ text: 'ultracode: fix the login bug' } as never)
+  await ui.advance(5000)
+  expect(await crab()).not.toContain(VISOR)
+
+  // Turned on in the slider.
+  await $.command.run({ command: 'effort', args: '' })
   let rings = false
   let shout = false
   for (let i = 0; i < 45; i++) {
@@ -479,7 +489,7 @@ test('ultracode turns Clawd into a flying hero that fires on idle, and a later p
   let missile = false
   for (let i = 0; i < 100 && !missile; i++) {
     await ui.advance(100)
-    missile = !!(await ui.find({ type: 'Text', text: /^[↑↓↗↘↖↙]$/, in: 'clawd' }))
+    missile = !!(await ui.find({ type: 'Text', text: /^[←↑→↓↖↗↘↙]$/, in: 'clawd' }))
   }
   expect(missile).toBe(true)
 
@@ -492,10 +502,17 @@ test('ultracode turns Clawd into a flying hero that fires on idle, and a later p
   }
   expect(yielded).toBe(true)
 
-  // A prompt without the word: armor off, plain Clawd again.
+  // A prompt changes nothing; /effort ultracode off takes the armor off.
   await $.prompt.submit({ text: 'thanks' } as never)
   await ui.advance(5000)
+  expect(await crab()).toContain(VISOR)
+  await $.command.run({ command: 'effort', args: 'ultracode off' })
+  await ui.advance(5000)
   expect(await crab()).not.toContain(VISOR)
+  // And /effort ultracode on suits it up again.
+  await $.command.run({ command: 'effort', args: 'ultracode on' })
+  await ui.advance(5000)
+  expect(await crab()).toContain(VISOR)
   await ui.unmount()
 })
 

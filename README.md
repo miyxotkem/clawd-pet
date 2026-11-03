@@ -38,7 +38,7 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 <details>
 <summary>A secret</summary>
 
-Put the word **ultracode** in a prompt. Clawd drops its costume, charges up, and transforms: rings of light race out across the whole bar, armor builds from its legs up, and a flash ends it in white armor with a glowing visor. The hero flies over the bars above instead of walking, and while Claude is idle it patrols, firing missiles from its back at the sky (fireworks) and the ground (blasts and smoke). Move the pointer over the other bars and it drops low for a while so you can click them. The next prompt without the word takes the armor off, and if Clawd is in the air, it parachutes down.
+Turn **ultracode** on in `/effort` (Tab in the slider, or `/effort ultracode on`). Clawd drops its costume, charges up, and transforms: rings of light race out across the whole bar, armor builds from its legs up, and a flash ends it in white armor with a glowing visor. The hero flies over the bars above instead of walking, its thrusters blazing at 45 degrees from its lower corners. While Claude is idle it patrols, firing missiles from its back every second or two, sometimes three at once, in any direction: straight, in long parabolas, in curves and loops, weaving, or in clusters that split in three. They burst into fireworks in the sky and blasts with smoke on the ground. Move the pointer over the other bars and it drops low for a while so you can click them. Turning ultracode off takes the armor off, and if Clawd is in the air, it parachutes down.
 
 </details>
 
