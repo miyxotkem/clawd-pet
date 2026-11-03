@@ -304,11 +304,9 @@ function wake(w: World) {
 // Where "tap tik" goes when the right side of the head is covered: just left of it.
 const TAP_LEFT = -5
 
-// Whether what the costume puts on covers any cell of a row (rows above the head are negative) between two columns.
-function covers(costume: string | null, row: number, from: number, to: number): boolean {
-  return (costume ? (COSTUMES[costume] ?? []) : []).some(piece =>
-    piece.rows.some((line, j) => piece.oy + j === row && [...line].some((c, i) => c !== '.' && piece.ox + i >= from && piece.ox + i <= to)),
-  )
+// The cells the pieces Clawd wears fill, from its top-left (rows above the head are negative).
+function cells(pieces: Piece[]): { dx: number; dy: number }[] {
+  return pieces.flatMap(p => p.rows.flatMap((line, j) => [...line].flatMap((c, i) => (c === '.' ? [] : [{ dx: p.ox + i, dy: p.oy + j }]))))
 }
 
 // Rows of armor on, from the legs up: all of them in hero form; a transformation builds them up or takes them off.
@@ -919,36 +917,6 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     return row({ ...PALETTE, o: body, L: eyes, R: eyes })(painted, r)
   }
 
-  // Effects drawn just above the head.
-  let fx: { text: string; color: string; dx: number } | null = null
-  if (w.mode === 'stunned') {
-    const ring = ['✦ · ✧ ·', '· ✧ · ✦', '✧ · ✦ ·', '· ✦ · ✧']
-    fx = { text: ring[Math.floor(w.t / 2) % 4] ?? '', color: STAR, dx: 2 }
-  } else if (w.mode === 'sleep') {
-    const z = ['z', ' z', '  Z', '   Z ']
-    fx = { text: z[Math.floor(w.t / 6) % 4] ?? '', color: '#8fa3bf', dx: SPRITE_W - 2 }
-  } else if (w.mode === 'jump') {
-    fx = { text: flip ? '✦        ✦' : ' ✧      ✧', color: STAR, dx: 0 }
-  } else if (w.workSince >= 0 && w.t - w.workSince >= LONG_TURN && w.mode !== 'held') {
-    // Sweat drops flicking off one side of the head, then the other.
-    fx = { text: "'", color: SWEAT, dx: flip ? -1 : SPRITE_W }
-  } else if (isTyping(w) && w.mode === 'idle') {
-    // Tap on whichever side of the head the outfit leaves clear: the right unless something worn covers it there.
-    const tapLeft = covers(costume, -1, SPRITE_W - 1, SPRITE_W + 3) && !covers(costume, -1, TAP_LEFT, -1)
-    fx = { text: flip ? 'tap' : ' tik', color: BODY, dx: tapLeft ? TAP_LEFT : SPRITE_W - 1 }
-  }
-  // Thinking dots left of the head while Claude works, clear of every costume: more and faster the harder it thinks.
-  // Tapping on the left too, they move further out to make room.
-  const dots = EFFORT_DOTS[props.effort ?? ''] ?? { n: 3, every: 4 }
-  const dotsShift = fx?.dx === TAP_LEFT ? TAP_LEFT : 0
-  const thinking = props.mood === 'working' && w.mode !== 'held' ? '·'.repeat(Math.floor(w.t / dots.every) % (dots.n + 1)).padStart(dots.n) : ''
-
-  const showBubble = w.bubble && w.t < w.bubbleUntil
-  // A one-line bubble beside the crab, on whichever side has room, clear of what it holds.
-  const bubbleW = Math.min(w.bubble.length + 4, Math.max(12, Math.min(60, props.columns - SPRITE_W - 8)))
-  const rightOf = x + SPRITE_W + 5
-  const bubbleLeft = rightOf + bubbleW <= props.columns ? rightOf : Math.max(0, x - bubbleW - 4)
-  const bubbleTop = Math.max(0, props.rows - 3)
   const left = x + swing
   const pieces = [
     ...(under ? (COSTUMES[under] ?? []) : []),
@@ -958,6 +926,49 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     // Thrusters at 45 degrees from the hero's lower back corners, down-left and down-right, flickering long and short.
     ...(w.isHero && !w.morph && w.mode === 'fly' && y < props.rows - SPRITE_H ? (flip ? THRUST_LONG : THRUST_SHORT) : []),
   ]
+  // Text never goes where Clawd wears something: whether `width` cells of the row above the head are clear from `dx`.
+  const worn = cells(pieces)
+  const isClear = (dx: number, width: number) => !worn.some(c => c.dy === -1 && c.dx >= dx && c.dx < dx + width)
+
+  // Effects drawn just above the head, on top of hats where they must cross them.
+  let fx: { text: string; color: string; dx: number } | null = null
+  if (w.mode === 'stunned') {
+    const ring = ['✦ · ✧ ·', '· ✧ · ✦', '✧ · ✦ ·', '· ✦ · ✧']
+    fx = { text: ring[Math.floor(w.t / 2) % 4] ?? '', color: STAR, dx: 2 }
+  } else if (w.mode === 'sleep') {
+    const z = ['z', ' z', '  Z', '   Z ']
+    fx = { text: z[Math.floor(w.t / 6) % 4] ?? '', color: '#8fa3bf', dx: [SPRITE_W - 2, SPRITE_W].find(dx => isClear(dx, 5)) ?? SPRITE_W - 2 }
+  } else if (w.mode === 'jump') {
+    fx = { text: flip ? '✦        ✦' : ' ✧      ✧', color: STAR, dx: 0 }
+  } else if (w.workSince >= 0 && w.t - w.workSince >= LONG_TURN && w.mode !== 'held') {
+    // Sweat drops flicking off one side of the head, then the other.
+    fx = { text: "'", color: SWEAT, dx: flip ? -1 : SPRITE_W }
+  } else if (isTyping(w) && w.mode === 'idle') {
+    // Tap on whichever side of the head the outfit leaves clear: the right unless something worn covers it there.
+    const tapLeft = !isClear(SPRITE_W - 1, 4) && isClear(TAP_LEFT, 5)
+    fx = { text: flip ? 'tap' : ' tik', color: BODY, dx: tapLeft ? TAP_LEFT : SPRITE_W - 1 }
+  }
+  // Thinking dots beside the head while Claude works: more and faster the harder it thinks. They change sides every
+  // 4 seconds, onto a side clear of what Clawd wears, the effect above its head and the edge; with neither, further left.
+  const dots = EFFORT_DOTS[props.effort ?? ''] ?? { n: 3, every: 4 }
+  const fxFrom = fx?.dx ?? 0
+  const fxTo = fx ? fx.dx + fx.text.length : 0
+  const sides = [-3 - dots.n, SPRITE_W + 3]
+  if (Math.floor(w.t / 40) % 2) sides.reverse()
+  const dotsAt =
+    sides.find(dx => isClear(dx, dots.n) && (dx + dots.n <= fxFrom || dx >= fxTo) && left + dx >= 0 && left + dx + dots.n <= props.columns) ??
+    -3 - dots.n + TAP_LEFT
+  const filled = '·'.repeat(Math.floor(w.t / dots.every) % (dots.n + 1))
+  // They fill outward from the head on either side.
+  const thinking = props.mood === 'working' && w.mode !== 'held' ? (dotsAt < 0 ? filled.padStart(dots.n) : filled.padEnd(dots.n)) : ''
+
+  const showBubble = w.bubble && w.t < w.bubbleUntil
+  // A one-line bubble beside the crab, on whichever side has room, clear of what it wears on the bubble's rows.
+  const bubbleW = Math.min(w.bubble.length + 4, Math.max(12, Math.min(60, props.columns - SPRITE_W - 8)))
+  const bubbleTop = Math.max(0, props.rows - 3)
+  const beside = worn.filter(c => y + c.dy >= bubbleTop && y + c.dy <= bubbleTop + 2).map(c => c.dx)
+  const rightOf = x + Math.max(SPRITE_W - 1, ...beside) + 6
+  const bubbleLeft = rightOf + bubbleW <= props.columns ? rightOf : Math.max(0, x + Math.min(0, ...beside) - bubbleW - 4)
 
   // Single-cell effects: missiles and their sparks, and while transforming, rings racing out from Clawd over the whole bar.
   // A missile points the way it flies, in eight directions.
@@ -1005,21 +1016,6 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
           <Text color={d.color}>{d.ch}</Text>
         </Box>
       ))}
-      {showBubble && (
-        <Box position="absolute" top={bubbleTop + props.offset} left={bubbleLeft} width={bubbleW} borderStyle="round" borderColor={BODY} paddingX={1}>
-          <Text wrap="truncate-end">{w.bubble}</Text>
-        </Box>
-      )}
-      {thinking && y > -props.offset && !inGround(w) && (
-        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left - 3 - dots.n + dotsShift)}>
-          <Text color={props.effort === 'max' ? STAR : BODY}>{thinking}</Text>
-        </Box>
-      )}
-      {fx && y > -props.offset && !inGround(w) && (
-        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left + fx.dx)}>
-          <Text color={fx.color}>{fx.text}</Text>
-        </Box>
-      )}
       {/* Rows below the strip are underground, out of sight: cut off as Clawd and its clones dig and dive. */}
       <Box position="absolute" top={y + props.offset} left={Math.max(0, left)} flexDirection="column">
         {spriteRows(w).slice(0, Math.max(0, props.rows - y)).map(crabRow)}
@@ -1041,6 +1037,22 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
           {['LooR', (w.t + i) % 4 < 2 ? 'o..o' : '.oo.'].map(helperRow)}
         </Box>
       ))}
+      {/* Words and effects last, so nothing Clawd wears, nor a clone passing by, covers them. */}
+      {showBubble && (
+        <Box position="absolute" top={bubbleTop + props.offset} left={bubbleLeft} width={bubbleW} borderStyle="round" borderColor={BODY} paddingX={1}>
+          <Text wrap="truncate-end">{w.bubble}</Text>
+        </Box>
+      )}
+      {thinking && y > -props.offset && !inGround(w) && (
+        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left + dotsAt)}>
+          <Text color={props.effort === 'max' ? STAR : BODY}>{thinking}</Text>
+        </Box>
+      )}
+      {fx && y > -props.offset && !inGround(w) && (
+        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left + fx.dx)}>
+          <Text color={fx.color}>{fx.text}</Text>
+        </Box>
+      )}
     </Box>
   )
 }

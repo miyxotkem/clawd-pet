@@ -826,6 +826,95 @@ test('a clone coming home digs up, walks over and merges back into Clawd', async
   await ui.unmount()
 })
 
+// Lays the drawn tree out as the bar does (absolute boxes at their top and left, the rest in a row or a column) and
+// collects the cells painted with a colour, the cells words take (text, a bordered bubble), and each text and where.
+type Drawn = { type?: string; props?: Record<string, unknown>; children?: unknown[] }
+function layout(tree: unknown) {
+  const painted = new Set<string>()
+  const words = new Set<string>()
+  const texts: { x: number; text: string }[] = []
+  const mark = (set: Set<string>, x: number, y: number, w: number, h: number) => {
+    for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) set.add(`${x + i},${y + j}`)
+  }
+  const place = (node: unknown, x: number, y: number): { w: number; h: number } => {
+    if (!node || typeof node !== 'object') return { w: 0, h: 0 }
+    const n = node as Drawn
+    const p = n.props ?? {}
+    if (n.type === 'Text') {
+      const text = (n.children ?? []).join('')
+      mark(words, x, y, text.length, 1)
+      texts.push({ x, text })
+      return { w: text.length, h: 1 }
+    }
+    const width = typeof p.width === 'number' ? p.width : undefined
+    const height = typeof p.height === 'number' ? p.height : undefined
+    if (p.borderStyle) {
+      mark(words, x, y, width ?? 0, 3)
+      return { w: width ?? 0, h: 3 }
+    }
+    if (p.backgroundColor) mark(painted, x, y, width ?? 1, height ?? 1)
+    const isColumn = p.flexDirection === 'column'
+    let along = 0
+    let across = 0
+    for (const child of n.children ?? []) {
+      const cp = (child as Drawn)?.props ?? {}
+      if (cp.position === 'absolute') {
+        place(child, x + Number(cp.left ?? 0), y + Number(cp.top ?? 0))
+        continue
+      }
+      const size = isColumn ? place(child, x, y + along) : place(child, x + along, y)
+      along += isColumn ? size.h : size.w
+      across = Math.max(across, isColumn ? size.w : size.h)
+    }
+    return isColumn ? { w: width ?? across, h: height ?? along } : { w: width ?? along, h: height ?? across }
+  }
+  place(tree, 0, 0)
+  return { painted, words, texts }
+}
+
+test('no costume covers what Clawd says or its thinking dots, and the dots change sides', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('command.register', () => ({ value: { command: 'clawd' } }))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  await $.prompt.submit({ text: 'go' } as never)
+  const listed = JSON.stringify(await $.command.run({ command: 'clawd', args: 'cosplay' }))
+  const names = (/Costumes: ([a-z, ]+)\./.exec(listed)?.[1] ?? '').split(', ')
+  expect(names).toContain('rocket')
+  const dotSpots = new Set<number>()
+
+  for (const name of names) {
+    await $.command.run({ command: 'clawd', args: `cosplay ${name}` })
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    // Every other tick for 9 seconds: the bubble, and both sides the dots take.
+    const look = async () => {
+      for (let i = 0; i < 45; i++) {
+        await ui.advance(200)
+        const { painted, words, texts } = layout(await ui.drawn({ in: 'clawd' }))
+        expect({ name, covered: [...words].filter(c => painted.has(c)) }).toEqual({ name, covered: [] })
+        if (name === 'reader') for (const t of texts) if (/^[· ]+$/.test(t.text) && t.text.length === 3) dotSpots.add(t.x)
+      }
+    }
+    // At home on the right, the bubble goes left; carried over to the left edge, it goes right. Carried gently and
+    // held still before letting go, so it lands on its feet: stunned stars cross a hat on purpose.
+    await $.command.run({ command: 'clawd', args: 'Checking every costume now' })
+    await look()
+    await ui.pointer({ in: 'clawd', type: 'down', x: 68, y: 3, button: 'left' })
+    for (let x = 66; x >= 8; x -= 2) {
+      await ui.pointer({ in: 'clawd', type: 'move', x, y: 3, button: 'left' })
+      await ui.advance(100)
+    }
+    await ui.advance(100)
+    await ui.pointer({ in: 'clawd', type: 'up', x: 8, y: 3, button: 'left' })
+    await ui.advance(1000)
+    await $.command.run({ command: 'clawd', args: 'Checking every costume now' })
+    await look()
+    await ui.unmount()
+  }
+  // Left of the head and right of it, at home and at the left edge.
+  expect(dotSpots.size).toBeGreaterThanOrEqual(3)
+})
+
 // The pet's module reads the real clock, so the reminder schedule is checked on its own.
 test('meal reminders come due in the hour after each meal starts, once a day', () => {
   const at = (h: number, m: number, day = 3) => mealDue(new Date(2026, 10, day, h, m))
