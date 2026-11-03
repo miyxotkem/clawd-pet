@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3 (2026-11-03)
+
+A hotfix: subagents no longer end Clawd's turn early.
+
+- **Subagents finishing mid-turn.** When Claude runs subagents, each one finishing used to look like the whole turn ending: Clawd said "Done!" and jumped while Claude was still working, stopped its thinking dots, wiped every helper crab, and in hero mode started firing as if idle. Now only your main turn ending counts.
+
 ## 1.1.2 (2026-11-03)
 
 A hotfix: Clawd's DJ headphones are back.
