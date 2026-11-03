@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { mealDue } from '../hooks/clawd'
+
 // Clawd reads the date for its holiday outfits: tests run on a day with none.
 const NO_HOLIDAY = new Date(2026, 10, 3).getTime()
 
@@ -588,7 +590,7 @@ test('idle a while after a turn, Clawd puts headphones on, over its model suit i
   on('classic.PostModelSwitch', () => ({}))
   const switchTo = (to_model: string) =>
     $.classic.PostModelSwitch({ from_model: 'x', to_model, requested_model: null, source: 'command', context_tokens: 0 } as never)
-  // A turn that ends well, then the bar 15 and 45 seconds on.
+  // A turn that ends well, then the bar 15 and 25 seconds on.
   const afterTurn = async () => {
     const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
     await $.prompt.submit({ text: 'go' } as never)
@@ -596,7 +598,7 @@ test('idle a while after a turn, Clawd puts headphones on, over its model suit i
     await $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false } as never)
     await ui.advance(15_000)
     const soon = JSON.stringify(await ui.drawn({ in: 'clawd' }))
-    await ui.advance(30_000)
+    await ui.advance(10_000)
     const later = JSON.stringify(await ui.drawn({ in: 'clawd' }))
     await ui.unmount()
     return { soon, later }
@@ -683,4 +685,17 @@ test('Clawd types along while you type, and stops a few seconds after', async ($
   await ui.advance(1000)
   expect(await tapping()).toBe(false)
   await ui.unmount()
+})
+
+// The pet's module reads the real clock, so the reminder schedule is checked on its own.
+test('meal reminders come due in the hour after each meal starts, once a day', () => {
+  const at = (h: number, m: number, day = 3) => mealDue(new Date(2026, 10, day, h, m))
+  expect(at(7, 45)?.line).toMatch(/Breakfast/)
+  expect(at(12, 5)?.line).toMatch(/Lunch/)
+  expect(at(18, 59)?.line).toMatch(/Dinner/)
+  expect(at(13, 0)).toBeNull()
+  expect(at(0, 0)).toBeNull()
+  // Same meal, same day: same key, so it is said once; the next day it is due again.
+  expect(at(12, 50)?.key).toBe(at(12, 5)?.key)
+  expect(at(12, 5, 4)?.key).not.toBe(at(12, 5)?.key)
 })

@@ -183,6 +183,8 @@ type World = {
   seenSay: number
   lastActive: number
   nextChat: number
+  // The last meal reminder said (see mealDue).
+  mealSaid: string
   grab: { dx: number; dy: number; moved: number; talked: boolean } | null
   lifted: boolean
   hover: boolean
@@ -232,6 +234,23 @@ function timeGreeting(): string {
   if (h < 12) return 'Good morning! Coffee first, code second.'
   if (h < 18) return 'Good afternoon! What are we building?'
   return 'Evening coding session? Count me in.'
+}
+
+// Meal and rest reminders, minutes past midnight: each said once a day, within the hour after it starts.
+const MEALS: { at: number; line: string }[] = [
+  { at: 7 * 60 + 30, line: 'Breakfast time! Fuel up before the next bug.' },
+  { at: 10 * 60 + 30, line: 'Stretch break! Stand up, roll those shoulders.' },
+  { at: 12 * 60, line: "Lunch o'clock! The code will wait." },
+  { at: 15 * 60 + 30, line: 'Snack time? A little something helps.' },
+  { at: 18 * 60 + 30, line: 'Dinner time! Step away from the keyboard.' },
+  { at: 22 * 60 + 30, line: 'Getting late. Wrap up and get some sleep?' },
+]
+
+// The reminder due now, keyed by day so it fires once, or null.
+export function mealDue(now: Date): { key: string; line: string } | null {
+  const min = now.getHours() * 60 + now.getMinutes()
+  const meal = MEALS.find(m => min >= m.at && min < m.at + 60)
+  return meal ? { key: `${now.toDateString()} ${meal.at}`, line: meal.line } : null
 }
 
 function say(w: World, text: string, ticks = 45) {
@@ -336,6 +355,13 @@ function step(w: World, cols: number, rows: number) {
     w.costumeAt = w.t
     w.demoShown = -1
     w.isDemoDone = false
+  }
+  // A meal reminder waits for the bubble to clear, then wakes Clawd to say it, working or not.
+  const meal = w.t >= w.bubbleUntil ? mealDue(new Date()) : null
+  if (meal && meal.key !== w.mealSaid) {
+    w.mealSaid = meal.key
+    wake(w)
+    say(w, meal.line, 80)
   }
   if (p.costume === 'demo') {
     const i = Math.floor((w.t - w.costumeAt) / DEMO_TICKS)
@@ -635,8 +661,8 @@ function eyeColor(w: World): string {
   return DARK
 }
 
-// Idle for 40 seconds: time for headphones.
-const isDjTime = (w: World) => w.props.mood === 'idle' && w.t - w.lastActive > 400
+// Idle for 20 seconds: time for headphones.
+const isDjTime = (w: World) => w.props.mood === 'idle' && w.t - w.lastActive > 200
 
 // The model suit Clawd keeps on under its headphones between jobs, if it wears one.
 function suitUnder(w: World, costume: string | null): string | null {
@@ -684,6 +710,7 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       seenSay: props.say?.id ?? 0,
       lastActive: 0,
       nextChat: 200,
+      mealSaid: '',
       grab: null,
       lifted: false,
       hover: false,

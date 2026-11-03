@@ -25,13 +25,14 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 ## What it does
 
 - **Walks and talks.** Clawd crawls around its bar, blinks, chats now and then, greets you by time of day, and falls asleep when things are quiet.
+- **Meal and break reminders.** Once a day each, Clawd reminds you about breakfast (7:30), a stretch break (10:30), lunch (12:00), a snack (15:30), dinner (18:30) and bedtime (22:30). If you open Claude up to an hour late, it still reminds you.
 - **Reacts to Claude.** It says "On it!" when you send a prompt, comments on the tools Claude uses, taps its arms while Claude works, and jumps when a turn finishes. After two minutes on one turn it starts to sweat, and when a turn fails it wears a bandage.
 - **Thinks as hard as Claude.** While Claude works, thinking dots fill up beside Clawd's head: one slow dot on low effort, up to five quick yellow ones on max. When you switch the effort level, in `/effort` or the desktop app's effort menu, Clawd says so right away, with a jump when it goes up.
 - **Types along.** While you type in the prompt box, Clawd stops wandering and taps away with you, then goes back to its business a few seconds after you stop.
 - **Helper crabs.** Each subagent Claude starts brings a small crab that walks beside Clawd until the subagent returns (up to three at once).
 - **Commits, pushes and tests.** Clawd puts on a party hat for `git commit`, launches the rocket for `git push`, and shakes pom-poms while tests run (`npm test`, `pytest`, `cargo test` and the like). When the command finishes it cheers, or looks sad if it failed.
 - **Drag and throw.** Grab Clawd and move it, even up over the bars above the prompt. It can always rise 6 rows, and it measures those bars, so when they are taller it rises as high as they reach. Let go and it falls back down; drop or fling it hard and it lands stunned, with stars. Every third high drop, it opens a parachute instead.
-- **Cosplay.** By default Clawd dresses for Claude's work: a thought bubble while thinking, a book for reading files, a chef's hat for edits, a deerstalker for searches, a wizard hat for commands, a laptop and coffee for other tools, a rocket when a turn is done, and headphones when idle.
+- **Cosplay.** By default Clawd dresses for Claude's work: a thought bubble while thinking, a book for reading files, a chef's hat for edits, a deerstalker for searches, a wizard hat for commands, a laptop and coffee for other tools, a rocket when a turn is done, and headphones after 20 seconds idle.
 - **Model suits.** Clawd wears a suit for the model the chat runs on, and changes when you switch with `/model`: the spidercrab suit on Opus 5.5, the batcrab suit on Haiku 5.5, the captain suit on Sonnet 5.5.
 - **Holidays.** Between jobs, a holiday outfit takes the suit's place: a pumpkin from October 24 to 31, a Santa hat from December 1 to 26, and a mai blossom with a lì xì envelope for a week either side of Tết.
 
