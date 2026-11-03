@@ -5,7 +5,7 @@ import type { Say } from '../types'
 
 // Rows the bar above the prompt takes: the 4-row crab plus two for hats, stars and z's.
 const ROWS = 6
-// How many rows the crab may rise over the bars above: the most it can fall from.
+// How many rows the crab may rise over the bars above while their height is unmeasured: the most it can fall from.
 const LIFT = 6
 
 const mood = atom({ plugin: 'clawd-pet', key: 'mood' } as const, 'idle')
@@ -18,6 +18,11 @@ const suit = atom({ plugin: 'clawd-pet', key: 'suit' } as const, null)
 const helpers = atom({ plugin: 'clawd-pet', key: 'helpers' } as const, 0)
 const typed = atom({ plugin: 'clawd-pet', key: 'typed' } as const, 0)
 const effort = atom({ plugin: 'clawd-pet', key: 'effort' } as const, null)
+const hero = atom({ plugin: 'clawd-pet', key: 'hero' } as const, false)
+const barRows = atom({ plugin: 'clawd-pet', key: 'barRows' } as const, 0)
+
+// The secret word: a prompt with it suits Clawd up as a hero until a prompt without it.
+const ULTRACODE = /\bultracode\b/i
 
 // Effort levels, lowest first: how hard Claude is asked to think.
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -169,6 +174,7 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     await update($, mood, () => 'working')
     await update($, activity, () => 'thinker')
+    await update($, hero, () => ULTRACODE.test(e.text))
     await say($, pick(START_LINES))
 
     return next(e)
@@ -238,8 +244,10 @@ export const register: Register = on => {
 
   // The crab asks for the room above while held or falling and gives it back once landed, and says when a demo ends.
   on('ui.message', async ($, e) => {
-    const data = e.data as { lifted?: unknown; isDemoDone?: unknown } | null
+    const data = e.data as { lifted?: unknown; isDemoDone?: unknown; barRows?: unknown } | null
     if (typeof data?.lifted === 'boolean') await update($, isLifted, () => data.lifted === true)
+    // The probe behind the other bars measured them.
+    if (typeof data?.barRows === 'number' && data.barRows >= 0) await update($, barRows, () => Math.floor(data.barRows as number))
     // The demo has shown every costume: back to dressing for Claude's work.
     if (data?.isDemoDone === true) await update($, cosplay, c => (c === 'demo' ? 'auto' : c))
 
@@ -256,13 +264,22 @@ export const register: Register = on => {
     const chosen = await read($, cosplay)
     const isAutoCostume = chosen === 'auto'
     const costume = isAutoCostume ? await read($, activity) : chosen === 'off' ? null : chosen
-    const offset = (await read($, isLifted)) ? Math.max(0, Math.min(LIFT, e.props.maxRows - ROWS)) : 0
+    // Lifted, the crab may rise as high as the bars above reach, never past the band's top.
+    // shortcut: 0 measured rows reads as not yet measured and falls back to LIFT, so with no bars above it can still rise LIFT rows.
+    const reach = (await read($, barRows)) || LIFT
+    const offset = (await read($, isLifted)) ? Math.max(0, Math.min(reach, e.props.maxRows - ROWS)) : 0
     // Draw the other bars first and sit below them, rather than replacing them.
     const others = await next(e)
 
     return (
       <Box flexDirection="column">
-        {others}
+        {/* The probe sits behind the other bars at their height and reports it. */}
+        <Box flexDirection="column">
+          <Box position="absolute" top={0} left={0} width={1} height="100%">
+            <Client key="probe" module="./probe.tsx" width={1} height="100%" />
+          </Box>
+          {others}
+        </Box>
         {/* The crab keeps its own rows; lifted, its region grows up over the bars, which only it then covers. */}
         <Box width={columns} height={rows}>
           <Box position="absolute" top={-offset} left={0}>
@@ -284,6 +301,7 @@ export const register: Register = on => {
                 helpers: await read($, helpers),
                 typed: await read($, typed),
                 effort: await read($, effort),
+                hero: await read($, hero),
               }}
             />
           </Box>

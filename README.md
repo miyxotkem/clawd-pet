@@ -30,10 +30,17 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 - **Types along.** While you type in the prompt box, Clawd stops wandering and taps away with you, then goes back to its business a few seconds after you stop.
 - **Helper crabs.** Each subagent Claude starts brings a small crab that walks beside Clawd until the subagent returns (up to three at once).
 - **Commits, pushes and tests.** Clawd puts on a party hat for `git commit`, launches the rocket for `git push`, and shakes pom-poms while tests run (`npm test`, `pytest`, `cargo test` and the like). When the command finishes it cheers, or looks sad if it failed.
-- **Drag and throw.** Grab Clawd and move it, even up over the bars above the prompt. Let go and it falls back down; drop or fling it hard and it lands stunned, with stars. Every third high drop, it opens a parachute instead.
+- **Drag and throw.** Grab Clawd and move it, even up over the bars above the prompt. It measures those bars, so it rises exactly as high as they reach. Let go and it falls back down; drop or fling it hard and it lands stunned, with stars. Every third high drop, it opens a parachute instead.
 - **Cosplay.** By default Clawd dresses for Claude's work: a thought bubble while thinking, a book for reading files, a chef's hat for edits, a deerstalker for searches, a wizard hat for commands, a laptop and coffee for other tools, a rocket when a turn is done, and headphones when idle.
 - **Model suits.** Clawd wears a suit for the model the chat runs on, and changes when you switch with `/model`: the spidercrab suit on Opus 5.5, the batcrab suit on Haiku 5.5, the captain suit on Sonnet 5.5.
 - **Holidays.** Between jobs, a holiday outfit takes the suit's place: a pumpkin from October 24 to 31, a Santa hat from December 1 to 26, and a mai blossom with a lì xì envelope for a week either side of Tết.
+
+<details>
+<summary>A secret</summary>
+
+Put the word **ultracode** in a prompt. Clawd drops its costume, charges up, and transforms: rings of light race out across the whole bar, armor builds from its legs up, and a flash ends it in white armor with a glowing visor. The hero flies over the bars above instead of walking, and while Claude is idle it patrols, firing missiles from its back at the sky (fireworks) and the ground (blasts and smoke). Move the pointer over the other bars and it drops low for a while so you can click them. The next prompt without the word takes the armor off, and if Clawd is in the air, it parachutes down.
+
+</details>
 
 ## Commands
 

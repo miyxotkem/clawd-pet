@@ -30,6 +30,7 @@ const PALETTE: Record<string, string> = {
   r: '#d9452b', // red
   x: '#6e1a10', // spider web lines: a dark red, as black reads as holes on a dark theme
   p: '#f08a24', // pumpkin orange, brighter than Clawd
+  v: '#5fd7ff', // the hero's visor
 }
 const SWEAT = '#7fc4f0'
 
@@ -102,6 +103,29 @@ const BANDAGE: Piece = { ox: 6, oy: 0, rows: ['twt'] }
 const LONG_TURN = 1200
 // Clawd types along for this many ticks (3 seconds) after your last edit in the prompt box.
 const TYPING = 30
+
+// Hero mode, for a prompt that says "ultracode": white armor, a glowing visor, a blue core, missile pods on its back.
+const HERO_SUIT: (typeof SUITS)[string] = { rows: ['w', 'w', 'g', 'w'], eyes: 'v', paint: ['..........', '..........', '....BB....'] }
+const HERO_PODS: Piece[] = [
+  { ox: -2, oy: 0, rows: ['gk', 'gk'] },
+  { ox: 10, oy: 0, rows: ['kg', 'kg'] },
+]
+const VISOR = '#5fd7ff'
+const GLOW = '#fff4ec'
+const WHITE = '#f7f3ee'
+const GREY = '#bdbdbd'
+const RED = '#d9452b'
+const BLUE = '#2f5d9e'
+const ORANGE = '#f08a24'
+// A transformation: plain Clawd until CHARGE, armor building up while rings race out, a flash at FLASH, done at MORPH.
+const CHARGE = 6
+const FLASH = 32
+const MORPH = 40
+const HERO_CHATTER = ['Justice compiles!', 'No bug escapes me.', 'Scanning the codebase from above…', 'Ultra mode: engaged.']
+
+// A missile in flight, and a spark of what it leaves behind: trails, fireworks, blasts and smoke.
+type Shot = { x: number; y: number; vx: number; vy: number; ay: number }
+type Spark = { x: number; y: number; vx: number; vy: number; g: number; life: number; ch: string; color: string }
 // Thinking dots by effort level: how many fill up, and how many ticks each takes.
 const EFFORT_DOTS: Record<string, { n: number; every: number }> = {
   low: { n: 1, every: 8 },
@@ -126,7 +150,7 @@ const SUITS: Record<string, { rows: string[]; eyes?: string; paint?: string[] }>
 const DEMO = Object.keys(COSTUMES)
 const DEMO_TICKS = 30
 
-type Mode = 'idle' | 'walk' | 'held' | 'fall' | 'jump' | 'stunned' | 'sleep' | 'wave' | 'sad'
+type Mode = 'idle' | 'walk' | 'held' | 'fall' | 'jump' | 'stunned' | 'sleep' | 'wave' | 'sad' | 'fly'
 
 type World = {
   props: PetProps
@@ -161,6 +185,15 @@ type World = {
   workSince: number
   seenTyped: number
   typedAt: number
+  // Hero form: worn now, the transformation under way (1 suits up, -1 takes it off), where it flies to.
+  isHero: boolean
+  morph: { dir: 1 | -1; at: number } | null
+  targetY: number
+  // Until this tick the hero keeps low and gives the room above back: the pointer went over the other bars.
+  yieldUntil: number
+  nextMissile: number
+  missiles: Shot[]
+  sparks: Spark[]
 }
 
 const CHATTER = [
@@ -206,6 +239,47 @@ function wake(w: World) {
   if (w.mode === 'sleep') setMode(w, 'idle')
 }
 
+// Where "tap tik" goes when the right side of the head is covered: just left of it.
+const TAP_LEFT = -5
+
+// Whether what the costume puts on covers any cell of a row (rows above the head are negative) between two columns.
+function covers(costume: string | null, row: number, from: number, to: number): boolean {
+  return (costume ? (COSTUMES[costume] ?? []) : []).some(piece =>
+    piece.rows.some((line, j) => piece.oy + j === row && [...line].some((c, i) => c !== '.' && piece.ox + i >= from && piece.ox + i <= to)),
+  )
+}
+
+// Rows of armor on, from the legs up: all of them in hero form; a transformation builds them up or takes them off.
+function armorRows(w: World): number {
+  if (!w.morph) return w.isHero ? SPRITE_H : 0
+  const k = w.t - w.morph.at
+  if (w.morph.dir === 1) return k < CHARGE ? 0 : Math.min(SPRITE_H, Math.floor((k - CHARGE) / 6))
+  return Math.max(0, SPRITE_H - Math.floor(k / 6))
+}
+
+// Fires a missile from the pod on Clawd's back: straight up at the sky, or arcing down at the ground.
+function fire(w: World) {
+  const back = w.face < 0 ? 1 : w.face > 0 ? -1 : Math.random() < 0.5 ? -1 : 1
+  const x = w.x + (back < 0 ? -2 : SPRITE_W + 1)
+  if (Math.random() < 0.5) w.missiles.push({ x, y: w.y - 1, vx: back * 0.2, vy: -0.4, ay: -0.08 })
+  else w.missiles.push({ x, y: w.y - 1, vx: back * (0.5 + Math.random() * 0.6), vy: -0.7, ay: 0.12 })
+}
+
+// Where a missile ends: fireworks in the sky, a blast with debris and smoke on the ground.
+function burst(w: World, x: number, y: number, sky: boolean) {
+  const colors = [STAR, RED, BLUE, WHITE]
+  if (sky) {
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2
+      w.sparks.push({ x, y: y + 1, vx: Math.cos(a) * 0.9, vy: Math.sin(a) * 0.45, g: 0.03, life: 9, ch: i % 2 ? '✦' : '✧', color: colors[i % 4] ?? STAR })
+    }
+    return
+  }
+  w.sparks.push({ x, y, vx: 0, vy: 0, g: 0, life: 4, ch: '✸', color: STAR })
+  for (let i = 0; i < 6; i++) w.sparks.push({ x, y, vx: (i - 2.5) * 0.3, vy: -0.5 - Math.random() * 0.3, g: 0.15, life: 7, ch: '*', color: i % 2 ? RED : ORANGE })
+  for (let i = 0; i < 3; i++) w.sparks.push({ x: x + i - 1, y: y - 1, vx: 0, vy: -0.15, g: 0, life: 10, ch: '~', color: GREY })
+}
+
 function step(w: World, cols: number, rows: number) {
   w.t++
   const ground = Math.max(0, rows - SPRITE_H)
@@ -230,15 +304,65 @@ function step(w: World, cols: number, rows: number) {
     }
   }
 
+  // "ultracode" asks for the hero and a later prompt for plain Clawd: transform, from plain Clawd either way.
+  if (p.hero !== (w.morph ? w.morph.dir === 1 : w.isHero)) {
+    w.morph = { dir: p.hero ? 1 : -1, at: w.t }
+    wake(w)
+    if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump') setMode(w, w.y < ground ? 'fly' : 'idle')
+  }
+  if (w.morph) {
+    const k = w.t - w.morph.at
+    if (k === FLASH) say(w, w.morph.dir === 1 ? 'ULTRACODE!' : 'Armor off. Plain crab again.', 30)
+    if (k >= MORPH) {
+      w.isHero = w.morph.dir === 1
+      w.morph = null
+      if (w.isHero) {
+        w.targetX = w.x
+        w.targetY = w.y
+        if (w.mode === 'idle') setMode(w, 'fly')
+      } else if (w.mode === 'fly') {
+        // Out of armor in mid-air: down it comes, under a parachute.
+        w.chute = true
+        w.vx = 0
+        w.vy = 0
+        setMode(w, 'fall')
+      }
+    }
+  }
+
   if (p.say && p.say.id !== w.seenSay) {
     w.seenSay = p.say.id
     wake(w)
     say(w, p.say.text)
-    if (w.mode !== 'held' && w.mode !== 'fall') {
+    // The hero zooms up for good news rather than hopping, and keeps flying through bad.
+    if (w.isHero && p.say.kind === 'done') w.targetY = -p.offset + 1
+    else if (w.mode !== 'held' && w.mode !== 'fall' && !w.isHero) {
       if (p.say.kind === 'done') jump(w)
       if (p.say.kind === 'error') setMode(w, 'sad', 25)
     }
   }
+
+  // Missiles fly on, and end where they hit the sky or the ground; sparks drift and fade.
+  const top = -p.offset
+  for (const m of w.missiles) {
+    w.sparks.push({ x: m.x, y: m.y, vx: 0, vy: 0, g: 0, life: 3, ch: '·', color: GREY })
+    m.x += m.vx
+    m.y += m.vy
+    m.vy += m.ay
+  }
+  w.missiles = w.missiles.filter(m => {
+    if (m.vy < 0 && m.y <= top) burst(w, m.x, top, true)
+    else if (m.vy > 0 && m.y >= rows - 1) burst(w, m.x, rows - 1, false)
+    else return m.x >= 0 && m.x < cols
+    return false
+  })
+  for (const s of w.sparks) {
+    s.x += s.vx
+    s.y += s.vy
+    s.vy += s.g
+    s.life--
+  }
+  w.sparks = w.sparks.filter(s => s.life > 0)
   if (p.typed !== w.seenTyped) {
     w.seenTyped = p.typed
     w.typedAt = w.t
@@ -310,9 +434,41 @@ function step(w: World, cols: number, rows: number) {
       break
     case 'sleep':
       break
+    case 'fly': {
+      // The hero holds still while transforming, else flies to a spot anywhere from the top of the bars to the ground.
+      if (w.morph) break
+      const minY = -p.offset + 1
+      w.targetY = Math.min(Math.max(w.targetY, minY), ground)
+      const dx = w.targetX - w.x
+      const dy = w.targetY - w.y
+      w.face = Math.abs(dx) < 0.5 ? 0 : dx < 0 ? -1 : 1
+      w.x += Math.sign(dx) * Math.min(Math.abs(dx), 0.8)
+      w.y += Math.sign(dy) * Math.min(Math.abs(dy), 0.4)
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.random() < 1 / 40) {
+        w.targetX = Math.floor(Math.random() * (maxX + 1))
+        w.targetY = w.t < w.yieldUntil ? ground : minY + Math.floor(Math.random() * Math.max(1, ground - minY))
+      }
+      // On idle the hero patrols, firing at the sky and the ground.
+      if (p.mood === 'idle' && w.t >= w.nextMissile) {
+        fire(w)
+        w.nextMissile = w.t + 25 + Math.floor(Math.random() * 40)
+      }
+      if (p.mood === 'idle' && w.t >= w.nextChat) {
+        w.nextChat = w.t + 300 + Math.floor(Math.random() * 300)
+        say(w, pick(HERO_CHATTER))
+      }
+      break
+    }
     default:
       // idle, wave, sad: timed poses fall back to idle
       if (w.mode !== 'idle' && w.t >= w.until) setMode(w, 'idle')
+      if (w.morph) break
+      if (w.mode === 'idle' && w.isHero) {
+        w.targetX = w.x
+        w.targetY = w.y
+        setMode(w, 'fly')
+        break
+      }
       if (w.mode !== 'idle' || isTyping(w)) break
       if (p.mood === 'idle' && w.t - w.lastActive > 900) {
         setMode(w, 'sleep')
@@ -328,7 +484,8 @@ function step(w: World, cols: number, rows: number) {
         setMode(w, 'walk')
       }
   }
-  if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump') w.y = ground
+  if (w.mode === 'fly') w.y = Math.min(Math.max(w.y, -p.offset), ground)
+  else if (w.mode !== 'held' && w.mode !== 'fall' && w.mode !== 'jump') w.y = ground
   w.x = Math.min(Math.max(w.x, 0), maxX)
   w.prevX = w.x
   w.prevY = w.y
@@ -367,6 +524,11 @@ function pointer(w: World, e: ClientPointerEvent) {
     if (clicked) {
       say(w, Math.random() < 0.3 ? pick(CHATTER) : pick(CLICK), 30)
       jump(w)
+    } else if (w.isHero) {
+      // Let go, the hero just flies on from there.
+      w.targetX = w.x
+      w.targetY = w.y
+      setMode(w, 'fly')
     } else {
       w.vx = Math.max(-4, Math.min(4, w.vx))
       w.vy = Math.max(-3, Math.min(3, w.vy))
@@ -383,7 +545,14 @@ function pointer(w: World, e: ClientPointerEvent) {
   }
   // Hovering the crab's own strip readies the room above; hovering up over the other bars gives it back.
   if (e.type === 'leave') w.hover = false
-  else if (!e.button) w.hover = ey >= 0
+  else if (!e.button) {
+    w.hover = ey >= 0
+    // Over the other bars the hero drops low and gives their room back for 10 seconds, so they can be clicked.
+    if (ey < 0 && w.isHero) {
+      w.yieldUntil = w.t + 100
+      w.targetY = Number.MAX_SAFE_INTEGER
+    }
+  }
 }
 
 // The standing legs, then each pair lifted in turn: legs keep their spots, as a crab's crawl does.
@@ -420,6 +589,8 @@ function eyeColor(w: World): string {
 // What the crab wears now: its pose can call for one (the parachute, the book over a sleeping crab).
 function wearing(w: World): string | null {
   if (w.chute && w.mode === 'fall') return 'parachute'
+  // The hero wears armor, not costumes, and transforms from plain Clawd.
+  if (w.isHero || w.morph) return null
   const c = w.props.costume
   if (c === 'demo') return DEMO[Math.max(0, Math.min(w.demoShown, DEMO.length - 1))] ?? null
   if (w.props.isAutoCostume) {
@@ -468,6 +639,13 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       workSince: -1,
       seenTyped: props.typed,
       typedAt: -TYPING,
+      isHero: props.hero,
+      morph: null,
+      targetY: 0,
+      yieldUntil: 0,
+      nextMissile: 30,
+      missiles: [],
+      sparks: [],
     }
     say(w, timeGreeting(), 60)
     s.every(TICK_MS, () => {
@@ -475,7 +653,9 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       step(cur, cur.props.columns, cur.props.rows)
       // Ask for the room above on hover and while falling; give it back once landed and left.
       // Never start growing mid-drag: the desktop app loses the held pointer when the region resizes.
-      const wantLift = cur.hover || cur.mode === 'fall' || (cur.mode === 'held' && cur.lifted)
+      // The hero keeps the room above to fly in, unless it gave it back and has come down; a transformation always takes it.
+      const heroLift = cur.morph !== null || (cur.isHero && !(cur.t < cur.yieldUntil && cur.y >= 0))
+      const wantLift = cur.hover || cur.mode === 'fall' || (cur.mode === 'held' ? cur.lifted : heroLift)
       if (wantLift !== cur.lifted) {
         cur.lifted = wantLift
         s.post({ lifted: wantLift })
@@ -518,12 +698,17 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
       </Box>
     )
   }
-  const crabColors = { o: BODY, L: eye, R: eye }
-  const suit = costume ? SUITS[costume] : undefined
+  // Charging up to transform, plain Clawd glows on and off.
+  const charging = w.morph?.dir === 1 && w.t - w.morph.at >= CHARGE && flip
+  const crabColors = { o: charging ? GLOW : BODY, L: eye, R: eye }
+  const costumeSuit = costume ? SUITS[costume] : undefined
+  const armor = armorRows(w)
   const crabRow = (line: string, r: number) => {
-    if (!suit) return row(crabColors)(line, r)
     // A sleeping crab sits a row lower: its rows start one later.
     const sr = w.mode === 'sleep' ? r - 1 : r
+    // Armor covers the crab from the legs up.
+    const suit = sr >= SPRITE_H - armor ? HERO_SUIT : costumeSuit
+    if (!suit) return row(crabColors)(line, r)
     const body = PALETTE[suit.rows[sr] ?? suit.rows[0] ?? 'o'] ?? BODY
     const eyes = eye === DARK ? ((suit.eyes && PALETTE[suit.eyes]) ?? eye) : eye === BODY ? body : eye
     const paint = suit.paint?.[sr]
@@ -545,10 +730,14 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     // Sweat drops flicking off one side of the head, then the other.
     fx = { text: "'", color: SWEAT, dx: flip ? -1 : SPRITE_W }
   } else if (isTyping(w) && w.mode === 'idle') {
-    fx = { text: flip ? 'tap' : ' tik', color: BODY, dx: SPRITE_W - 1 }
+    // Tap on whichever side of the head the outfit leaves clear: the right unless something worn covers it there.
+    const tapLeft = covers(costume, -1, SPRITE_W - 1, SPRITE_W + 3) && !covers(costume, -1, TAP_LEFT, -1)
+    fx = { text: flip ? 'tap' : ' tik', color: BODY, dx: tapLeft ? TAP_LEFT : SPRITE_W - 1 }
   }
   // Thinking dots left of the head while Claude works, clear of every costume: more and faster the harder it thinks.
+  // Tapping on the left too, they move further out to make room.
   const dots = EFFORT_DOTS[props.effort ?? ''] ?? { n: 3, every: 4 }
+  const dotsShift = fx?.dx === TAP_LEFT ? TAP_LEFT : 0
   const thinking = props.mood === 'working' && w.mode !== 'held' ? '·'.repeat(Math.floor(w.t / dots.every) % (dots.n + 1)).padStart(dots.n) : ''
 
   const showBubble = w.bubble && w.t < w.bubbleUntil
@@ -558,20 +747,66 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
   const bubbleLeft = rightOf + bubbleW <= props.columns ? rightOf : Math.max(0, x - bubbleW - 4)
   const bubbleTop = Math.max(0, props.rows - 3)
   const left = x + swing
-  const pieces = [...(costume ? (COSTUMES[costume] ?? []) : []), ...(w.mode === 'sad' ? [BANDAGE] : [])]
+  const pieces = [
+    ...(costume ? (COSTUMES[costume] ?? []) : []),
+    ...(w.mode === 'sad' ? [BANDAGE] : []),
+    ...(armor === SPRITE_H ? HERO_PODS : []),
+    // Thrusters under the hero's legs while it flies.
+    ...(w.isHero && !w.morph && w.mode === 'fly' && y < props.rows - SPRITE_H ? [{ ox: 0, oy: SPRITE_H, rows: [flip ? '.y.y..y.y.' : '.p.p..p.p.'] }] : []),
+  ]
+
+  // Single-cell effects: missiles and their sparks, and while transforming, rings racing out from Clawd over the whole bar.
+  const arrow = (m: Shot) => (m.vy < 0 ? (m.vx < -0.3 ? '↖' : m.vx > 0.3 ? '↗' : '↑') : m.vx < -0.3 ? '↙' : m.vx > 0.3 ? '↘' : '↓')
+  const specks = [
+    ...w.sparks.map(s => ({ x: Math.round(s.x), y: Math.round(s.y), ch: s.ch, color: s.color })),
+    ...w.missiles.map(m => ({ x: Math.round(m.x), y: Math.round(m.y), ch: arrow(m), color: WHITE })),
+  ]
+  const k = w.morph ? w.t - w.morph.at : -1
+  if (w.morph && k >= CHARGE && k < FLASH) {
+    const cx = x + SPRITE_W / 2
+    const cy = y + 1.5
+    const rings = [
+      { r: (k - CHARGE) * 3, ch: '✦', color: w.morph.dir === 1 ? VISOR : GREY },
+      { r: (k - CHARGE) * 3 - 7, ch: '·', color: WHITE },
+    ]
+    for (const ring of rings) {
+      if (ring.r <= 0) continue
+      for (let ry = -props.offset; ry < props.rows; ry++) {
+        // Cells are about twice as tall as wide: rows count double.
+        const dy = (ry - cy) * 2
+        if (Math.abs(dy) > ring.r) continue
+        const dx = Math.round(Math.sqrt(ring.r * ring.r - dy * dy))
+        specks.push({ x: Math.round(cx - dx), y: ry, ch: ring.ch, color: ring.color }, { x: Math.round(cx + dx), y: ry, ch: ring.ch, color: ring.color })
+      }
+    }
+  }
+  const shown = specks.filter(d => d.x >= 0 && d.x < props.columns && d.y >= -props.offset && d.y < props.rows)
+  // Then a flash: stripes across every other row of the bar for a moment.
+  const flash = k >= FLASH && k < FLASH + 3 ? '─'.repeat(props.columns) : ''
   // Helper crabs trail behind Clawd on the ground, or run ahead where there is no room behind.
   const helperXs = Array.from({ length: Math.min(3, props.helpers) }, (_, i) => (x - 6 * (i + 1) >= 0 ? x - 6 * (i + 1) : x + SPRITE_W + 2 + 6 * i))
   const helperRow = row({ o: BODY, L: DARK, R: DARK })
 
   return (
     <Box width={props.columns} height={props.rows + props.offset}>
+      {flash &&
+        Array.from({ length: Math.ceil((props.rows + props.offset) / 2) }, (_, i) => (
+          <Box key={`f${i}`} position="absolute" top={i * 2} left={0}>
+            <Text color={w.morph?.dir === 1 ? VISOR : GREY}>{flash}</Text>
+          </Box>
+        ))}
+      {shown.map((d, i) => (
+        <Box key={`s${i}`} position="absolute" top={d.y + props.offset} left={d.x}>
+          <Text color={d.color}>{d.ch}</Text>
+        </Box>
+      ))}
       {showBubble && (
         <Box position="absolute" top={bubbleTop + props.offset} left={bubbleLeft} width={bubbleW} borderStyle="round" borderColor={BODY} paddingX={1}>
           <Text wrap="truncate-end">{w.bubble}</Text>
         </Box>
       )}
       {thinking && y > -props.offset && (
-        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left - 3 - dots.n)}>
+        <Box position="absolute" top={y - 1 + props.offset} left={Math.max(0, left - 3 - dots.n + dotsShift)}>
           <Text color={props.effort === 'max' ? STAR : BODY}>{thinking}</Text>
         </Box>
       )}

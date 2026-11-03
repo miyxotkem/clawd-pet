@@ -6,6 +6,7 @@ export type Say = { id: number; text: string; kind: 'info' | 'done' | 'error' }
 // helpers: subagents running now, each drawn as a small crab beside Clawd.
 // typed: edits made in the prompt box so far; a change means you just typed.
 // effort: the effort level of the latest turn (low to max), null when the model has none.
+// hero: the last prompt said "ultracode": Clawd suits up in white armor and flies.
 export type PetProps = {
   mood: Mood
   say: Say | null
@@ -18,6 +19,7 @@ export type PetProps = {
   helpers: number
   typed: number
   effort: string | null
+  hero: boolean
 }
 
 declare module 'claude-code' {
@@ -39,6 +41,10 @@ declare module 'claude-code' {
       typed: number
       // The effort level of the latest turn: low, medium, high, xhigh or max.
       effort: string | null
+      // The last prompt said "ultracode": hero mode until a prompt without it.
+      hero: boolean
+      // Rows the other bars above Clawd take, as the probe measured them (0 before it has).
+      barRows: number
     }
   }
 }

@@ -23,11 +23,11 @@ test('thrown crab lands stunned, on every surface that draws it', async ($, on) 
     expect(await ui.find({ type: 'Text', text: /morning|afternoon|Evening|midnight/, in: 'clawd' })).toBeDefined()
 
     // Crab rests at the right side: columns 64..73, rows 2..5 of the 6-row bar. Grab it and fling it left.
-    await ui.pointer({ type: 'down', x: 68, y: 2, button: 'left' })
+    await ui.pointer({ in: 'clawd', type: 'down', x: 68, y: 2, button: 'left' })
     await ui.advance(100)
-    await ui.pointer({ type: 'move', x: 30, y: 0, button: 'left' })
+    await ui.pointer({ in: 'clawd', type: 'move', x: 30, y: 0, button: 'left' })
     await ui.advance(100)
-    await ui.pointer({ type: 'up', x: 30, y: 0, button: 'left' })
+    await ui.pointer({ in: 'clawd', type: 'up', x: 30, y: 0, button: 'left' })
 
     let stunned
     for (let i = 0; i < 20 && !stunned; i++) {
@@ -61,21 +61,21 @@ test('hovering readies the room above, so a slow drag lifts the crab over the ba
     await ui.advance(100)
 
     // Hover the crab's strip: its region grows 6 rows up over the bars before any drag starts.
-    await ui.pointer({ type: 'move', x: 68, y: 2 })
+    await ui.pointer({ in: 'clawd', type: 'move', x: 68, y: 2 })
     await ui.advance(100)
     expect(JSON.stringify(await ui.drawn())).toContain('"height":12')
 
     // Grab it (strip row 2 is region row 8) and drag slowly up to the top: 6 rows above the strip.
-    await ui.pointer({ type: 'down', x: 68, y: 8, button: 'left' })
+    await ui.pointer({ in: 'clawd', type: 'down', x: 68, y: 8, button: 'left' })
     for (const y of [6, 4, 2, 1, -3]) {
-      await ui.pointer({ type: 'move', x: 68, y, button: 'left' })
+      await ui.pointer({ in: 'clawd', type: 'move', x: 68, y, button: 'left' })
       await ui.advance(100)
     }
     // Dragged past the top, it stops at the ceiling: region row 0 (swinging a column either way while held).
     expect(JSON.stringify(await ui.drawn({ in: 'clawd' }))).toMatch(/"top":0,"left":6[345]/)
 
     // Drop it: it falls back into its strip and lands stunned.
-    await ui.pointer({ type: 'up', x: 68, y: -3, button: 'left' })
+    await ui.pointer({ in: 'clawd', type: 'up', x: 68, y: -3, button: 'left' })
     let stunned
     for (let i = 0; i < 20 && !stunned; i++) {
       await ui.advance(100)
@@ -84,7 +84,7 @@ test('hovering readies the room above, so a slow drag lifts the crab over the ba
     expect(stunned).toBeDefined()
 
     // Hovering up over the other bars gives the room back, so they can be clicked.
-    await ui.pointer({ type: 'move', x: 68, y: 2 })
+    await ui.pointer({ in: 'clawd', type: 'move', x: 68, y: 2 })
     await ui.advance(100)
     expect(JSON.stringify(await ui.drawn())).not.toContain('"height":12')
     await ui.unmount()
@@ -98,8 +98,8 @@ test('the region never starts growing in the middle of a drag', async ($, on) =>
   await ui.advance(100)
 
   // A grab with no hover first: the region keeps its 4 rows while held.
-  await ui.pointer({ type: 'down', x: 68, y: 2, button: 'left' })
-  await ui.pointer({ type: 'move', x: 68, y: 0, button: 'left' })
+  await ui.pointer({ in: 'clawd', type: 'down', x: 68, y: 2, button: 'left' })
+  await ui.pointer({ in: 'clawd', type: 'move', x: 68, y: 0, button: 'left' })
   await ui.advance(300)
   expect(JSON.stringify(await ui.drawn())).not.toContain('"height":12')
   await ui.unmount()
@@ -151,14 +151,14 @@ test('the parachute costume opens on a high drop: a soft landing, no stars', asy
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
   await ui.advance(100)
 
-  await ui.pointer({ type: 'move', x: 68, y: 2 })
+  await ui.pointer({ in: 'clawd', type: 'move', x: 68, y: 2 })
   await ui.advance(100)
-  await ui.pointer({ type: 'down', x: 68, y: 8, button: 'left' })
+  await ui.pointer({ in: 'clawd', type: 'down', x: 68, y: 8, button: 'left' })
   for (const y of [6, 4, 2, 1, -3]) {
-    await ui.pointer({ type: 'move', x: 68, y, button: 'left' })
+    await ui.pointer({ in: 'clawd', type: 'move', x: 68, y, button: 'left' })
     await ui.advance(100)
   }
-  await ui.pointer({ type: 'up', x: 68, y: -3, button: 'left' })
+  await ui.pointer({ in: 'clawd', type: 'up', x: 68, y: -3, button: 'left' })
   await ui.advance(200)
   expect(JSON.stringify(await ui.drawn({ in: 'clawd' }))).toContain('#2f5d9e') // the canopy
 
@@ -393,6 +393,107 @@ test('the thinking dots follow the effort level, and Clawd says when it changes'
   await step('low')
   await ui.advance(100)
   expect(await ui.find({ type: 'Text', text: /Low effort/, in: 'clawd' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Clawd rises only as high as the bars above reach, as the probe measures them', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  // The probe reports the bars' height; hover the strip to lift, and read how tall the region grew.
+  const liftedHeight = async (barRows: number) => {
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    await ui.post({ barRows }, { in: 'probe' })
+    await ui.advance(100)
+    await ui.pointer({ in: 'clawd', type: 'move', x: 68, y: 2 })
+    await ui.advance(100)
+    const h = JSON.stringify(await ui.drawn()).match(/"key":"clawd".*?"height":(\d+)/)?.[1]
+    await ui.unmount()
+    return Number(h)
+  }
+
+  // Bars 3 rows tall: 6 rows of strip and 3 above.
+  expect(await liftedHeight(3)).toBe(9)
+  // Taller than the band allows: capped at its 20 rows.
+  expect(await liftedHeight(30)).toBe(20)
+})
+
+test('Clawd taps on whichever side of its head the outfit leaves clear', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('command.register', () => ({ value: { command: 'clawd' } }))
+  on('prompt.edit', (_, e) => ({ text: e.text + e.inputText, cursor: e.text.length + e.inputText.length }) as never)
+  // Where "tap tik" is drawn: the column of the Box holding it.
+  const tapColumn = async (outfit: string) => {
+    await $.command.run({ command: 'clawd', args: `cosplay ${outfit}` })
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    await ui.advance(100)
+    await $.prompt.edit({ origin: { kind: 'person' }, text: '', cursor: 0, start: 0, end: 0, inputText: 'h' } as never)
+    let column: number | undefined
+    for (let i = 0; i < 4 && column === undefined; i++) {
+      await ui.advance(100)
+      const m = JSON.stringify(await ui.drawn({ in: 'clawd' })).match(/"left":(\d+)\},"children":\[\{"type":"Text","props":\{"color":"#d97757"\},"children":\[" ?t(?:ap|ik)"\]/)
+      if (m) column = Number(m[1])
+    }
+    await ui.unmount()
+    return column
+  }
+
+  // Clawd stands at column 64: plain, it taps just right of its head; the wizard's wand is there, so it taps left.
+  expect(await tapColumn('off')).toBe(73)
+  expect(await tapColumn('wizard')).toBe(59)
+  // The spidercrab's web is on the left: the right stays clear.
+  expect(await tapColumn('spidercrab')).toBe(73)
+})
+
+const VISOR = '#5fd7ff'
+
+test('ultracode turns Clawd into a flying hero that fires on idle, and a later prompt turns it back', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Text', null, 'other bar'))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  await ui.advance(100)
+  // The bar as laid out (the region's height), and what Clawd draws in it.
+  const tree = async () => JSON.stringify(await ui.drawn())
+  const crab = async () => JSON.stringify(await ui.drawn({ in: 'clawd' }))
+
+  await $.prompt.submit({ text: 'ultracode: fix the login bug' } as never)
+  let rings = false
+  let shout = false
+  for (let i = 0; i < 45; i++) {
+    await ui.advance(100)
+    rings ||= !!(await ui.find({ type: 'Text', text: '✦', in: 'clawd' }))
+    shout ||= !!(await ui.find({ type: 'Text', text: /ULTRACODE!/, in: 'clawd' }))
+  }
+  expect(rings).toBe(true)
+  expect(shout).toBe(true)
+  // Suited up: the visor glows, and Clawd takes the room over the bars to fly in.
+  expect(await crab()).toContain(VISOR)
+  expect(await tree()).toContain('"height":12')
+
+  // Idle, the hero fires at the sky and the ground.
+  await $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false } as never)
+  let missile = false
+  for (let i = 0; i < 100 && !missile; i++) {
+    await ui.advance(100)
+    missile = !!(await ui.find({ type: 'Text', text: /^[↑↓↗↘↖↙]$/, in: 'clawd' }))
+  }
+  expect(missile).toBe(true)
+
+  // Over the other bars, it gives their room back.
+  await ui.pointer({ in: 'clawd', type: 'move', x: 5, y: 0 })
+  let yielded = false
+  for (let i = 0; i < 60 && !yielded; i++) {
+    await ui.advance(100)
+    yielded = !(await tree()).includes('"height":12')
+  }
+  expect(yielded).toBe(true)
+
+  // A prompt without the word: armor off, plain Clawd again.
+  await $.prompt.submit({ text: 'thanks' } as never)
+  await ui.advance(5000)
+  expect(await crab()).not.toContain(VISOR)
   await ui.unmount()
 })
 
