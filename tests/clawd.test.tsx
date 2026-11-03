@@ -613,6 +613,47 @@ test('idle a while after a turn, Clawd puts headphones on, over its model suit i
   expect(suited.later).toContain(WEB) // the spidercrab suit stays on underneath
 })
 
+test("a subagent's run ending mid-turn is not the turn ending", async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  const ended = (agentId?: string) =>
+    $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false, turnId: 't', ...(agentId ? { agentId } : {}) } as never)
+  // Stands for a subagent: its run ends, and the bar is read, before its Agent call has returned.
+  let eyesThen = 0
+  on('tool.call', async () => {
+    await ended('agent-1')
+    await ui.advance(100)
+    eyesThen = (JSON.stringify(await ui.drawn({ in: 'clawd' })).match(new RegExp(EYE, 'g')) ?? []).length
+    return { result: {} }
+  })
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  await $.prompt.submit({ text: 'go' } as never)
+  await ui.advance(1000)
+  const done = async () => !!(await ui.find({ type: 'Text', text: /Done|All finished|Ta-da/, in: 'clawd' }))
+  const thinking = async () => {
+    let seen = false
+    for (let i = 0; i < 10; i++) {
+      await ui.advance(100)
+      seen ||= !!(await ui.find({ type: 'Text', text: /^ *·+$/, in: 'clawd' }))
+    }
+    return seen
+  }
+
+  await $.tool.call({ tool: 'Agent', description: 'a', prompt: 'a' } as never)
+  // Its helper crab was still out when its run ended (Clawd's two eyes and its two), no "Done!", still thinking.
+  expect(eyesThen).toBe(4)
+  expect(await done()).toBe(false)
+  expect(await thinking()).toBe(true)
+
+  // The main turn ends: now Clawd is done.
+  await ended()
+  await ui.advance(100)
+  expect(await done()).toBe(true)
+  await ui.unmount()
+})
+
 test('Clawd types along while you type, and stops a few seconds after', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))

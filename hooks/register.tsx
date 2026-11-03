@@ -293,6 +293,8 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
+    // A subagent's run ending is not the turn ending: the main turn may still be working.
+    if (e.agentId !== undefined) return next(e)
     lastTool = ''
     await update($, helpers, () => 0)
     await update($, mood, () => 'idle')
