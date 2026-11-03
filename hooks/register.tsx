@@ -16,6 +16,7 @@ const cosplay = atom({ plugin: 'clawd-pet', key: 'cosplay' } as const, 'auto')
 const activity = atom({ plugin: 'clawd-pet', key: 'activity' } as const, null)
 const suit = atom({ plugin: 'clawd-pet', key: 'suit' } as const, null)
 const helpers = atom({ plugin: 'clawd-pet', key: 'helpers' } as const, 0)
+const typed = atom({ plugin: 'clawd-pet', key: 'typed' } as const, 0)
 
 // Keep in step with COSTUMES in clawd.tsx.
 const COSTUME_NAMES = [
@@ -163,6 +164,13 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  // Clawd types along with you: count each real edit (not a bare cursor move) and leave the draft alone.
+  on('prompt.edit', async ($, e, next) => {
+    if (e.inputText || e.start !== e.end) await update($, typed, n => n + 1)
+
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('tool.call', async ($, e, next) => {
     const command = (e.tool === 'Bash' || e.tool === 'PowerShell') && typeof e.command === 'string' ? e.command : ''
     const moment = MOMENTS.find(m => m.match.test(command))
@@ -247,6 +255,7 @@ export const register: Register = on => {
                 isAutoCostume,
                 restCostume: seasonFor(await $.clock.now()) ?? (await read($, suit)),
                 helpers: await read($, helpers),
+                typed: await read($, typed),
               }}
             />
           </Box>

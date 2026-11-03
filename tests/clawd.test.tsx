@@ -352,3 +352,34 @@ test('Clawd dresses for the season between jobs', async ($, on) => {
 })
 
 const STAR_YELLOW = '#f5c542'
+
+test('Clawd types along while you type, and stops a few seconds after', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  // Stands for the prompt box: applies the edit.
+  on('prompt.edit', (_, e) => ({ text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }) as never)
+  const edit = (text: string, start: number, end: number, inputText: string) =>
+    $.prompt.edit({ origin: { kind: 'person' }, text, cursor: start, start, end, inputText } as never)
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  const tapping = async () => {
+    // The tap and tik alternate every other tick: look at two in a row.
+    let seen = false
+    for (let i = 0; i < 2; i++) {
+      await ui.advance(100)
+      seen ||= !!(await ui.find({ type: 'Text', text: /^ ?t(ap|ik)$/, in: 'clawd' }))
+    }
+    return seen
+  }
+  await ui.advance(100)
+  expect(await tapping()).toBe(false)
+
+  await edit('', 0, 0, 'h')
+  expect(await tapping()).toBe(true)
+
+  // An arrow key only moves the cursor: it does not keep Clawd typing.
+  await ui.advance(2000)
+  await edit('h', 0, 0, '')
+  await ui.advance(1000)
+  expect(await tapping()).toBe(false)
+  await ui.unmount()
+})

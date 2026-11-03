@@ -4,6 +4,7 @@ export type Say = { id: number; text: string; kind: 'info' | 'done' | 'error' }
 // costume: what it wears; isAutoCostume: chosen from Claude's work rather than by /clawd cosplay;
 // restCostume: the holiday outfit or else the current model's suit, worn between jobs while costumes follow Claude's work.
 // helpers: subagents running now, each drawn as a small crab beside Clawd.
+// typed: edits made in the prompt box so far; a change means you just typed.
 export type PetProps = {
   mood: Mood
   say: Say | null
@@ -14,6 +15,7 @@ export type PetProps = {
   isAutoCostume: boolean
   restCostume: string | null
   helpers: number
+  typed: number
 }
 
 declare module 'claude-code' {
@@ -31,6 +33,8 @@ declare module 'claude-code' {
       suit: string | null
       // Subagents running now.
       helpers: number
+      // Edits made in the prompt box so far.
+      typed: number
     }
   }
 }

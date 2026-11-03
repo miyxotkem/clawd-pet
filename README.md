@@ -2,7 +2,7 @@
 
 A pixel Clawd pet for Claude Code. It lives in a small bar above the prompt: it walks, talks, reacts to what Claude is doing, and can be picked up, thrown and stunned. It also dresses up in 17 costumes.
 
-![All 12 costumes](docs/costumes.png)
+![All 17 costumes](docs/costumes.png)
 
 ## Install
 
@@ -26,6 +26,7 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 
 - **Walks and talks.** Clawd crawls around its bar, blinks, chats now and then, greets you by time of day, and falls asleep when things are quiet.
 - **Reacts to Claude.** It says "On it!" when you send a prompt, comments on the tools Claude uses, taps its arms while Claude works, and jumps when a turn finishes. After two minutes on one turn it starts to sweat, and when a turn fails it wears a bandage.
+- **Types along.** While you type in the prompt box, Clawd stops wandering and taps away with you, then goes back to its business a few seconds after you stop.
 - **Helper crabs.** Each subagent Claude starts brings a small crab that walks beside Clawd until the subagent returns (up to three at once).
 - **Commits, pushes and tests.** Clawd puts on a party hat for `git commit`, launches the rocket for `git push`, and shakes pom-poms while tests run (`npm test`, `pytest`, `cargo test` and the like). When the command finishes it cheers, or looks sad if it failed.
 - **Drag and throw.** Grab Clawd and move it, even up over the bars above the prompt. Let go and it falls back down; drop or fling it hard and it lands stunned, with stars. Every third high drop, it opens a parachute instead.
