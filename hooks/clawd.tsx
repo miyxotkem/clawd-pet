@@ -103,8 +103,11 @@ const COSTUMES: Record<string, Piece[]> = {
 }
 // A plaster on the head while sad after an error.
 const BANDAGE: Piece = { ox: 6, oy: 0, rows: ['twt'] }
-// Past this many ticks of one turn (2 minutes), Clawd sweats.
-const LONG_TURN = 1200
+// Past this many ticks of one turn (1 minute), Clawd sweats, more each minute.
+const LONG_TURN = 600
+// Past this many (3 minutes), it runs about the bar, hunting for the answer.
+const FRANTIC = 1800
+const FRANTIC_LINES = ["Where's the fix?!", 'Think, think, think!', 'It has to be here somewhere!', 'Checking every corner…', 'Almost… almost…']
 // Clawd types along for this many ticks (3 seconds) after your last edit in the prompt box.
 const TYPING = 30
 
@@ -279,6 +282,9 @@ function setMode(w: World, mode: Mode, ticks = 0) {
 }
 
 const isTyping = (w: World) => w.t - w.typedAt < TYPING
+
+// Three minutes into one turn: running about. The hero flies instead.
+const isFrantic = (w: World) => w.workSince >= 0 && w.t - w.workSince >= FRANTIC && !w.isHero
 
 const inGround = (w: World) => w.mode === 'dive' || w.mode === 'under' || w.mode === 'dig'
 
@@ -493,7 +499,19 @@ function step(w: World, cols: number, rows: number) {
   if (p.mood === 'working') w.lastActive = w.t
   if (p.mood !== 'working') w.workSince = -1
   else if (w.workSince < 0) w.workSince = w.t
-  else if (w.t - w.workSince === LONG_TURN && w.mode !== 'held') say(w, pick(['Phew, this is a big one!', 'Still going… I need a snack.']))
+  else if (w.mode !== 'held' && !inGround(w)) {
+    // A long turn: Clawd sweats from the first minute, a little more each minute, and talks about it.
+    const k = w.t - w.workSince
+    if (k === LONG_TURN) say(w, pick(['Phew, this is a big one!', 'Getting warm in here…']))
+    if (k === LONG_TURN * 2) say(w, pick(['Still going… I need a snack.', 'This one fights back!']))
+    if (k >= FRANTIC && (k - FRANTIC) % 60 === 0) say(w, pick(FRANTIC_LINES), 30)
+    // Drops fly off one side of its head, then the other: every 6 ticks, then every 3, then a spray.
+    const every = k >= FRANTIC ? 1 : k >= LONG_TURN * 2 ? 3 : 6
+    if (k >= LONG_TURN && k % every === 0) {
+      const side = Math.floor(k / every) % 2 ? -1 : 1
+      w.sparks.push({ x: side < 0 ? w.x - 1 : w.x + SPRITE_W, y: w.y, vx: side * 0.35, vy: -0.4, g: 0.12, life: 6, ch: "'", color: SWEAT })
+    }
+  }
 
   switch (w.mode) {
     case 'held':
@@ -534,8 +552,9 @@ function step(w: World, cols: number, rows: number) {
     case 'walk': {
       const d = w.targetX - w.x
       w.face = d < 0 ? -1 : 1
-      // One whole cell per step, on the frames where a pair of legs comes down.
-      if (w.t % 2 === 0) w.x += Math.sign(d) * Math.min(Math.abs(d), 1)
+      // One whole cell per step, on the frames where a pair of legs comes down; running about, two every frame.
+      const pace = isFrantic(w) ? 2 : 1
+      if (pace > 1 || w.t % 2 === 0) w.x += Math.sign(d) * Math.min(Math.abs(d), pace)
       if (Math.abs(w.targetX - w.x) < 0.5) {
         w.face = 0
         setMode(w, 'idle')
@@ -600,6 +619,12 @@ function step(w: World, cols: number, rows: number) {
         break
       }
       if (w.mode !== 'idle' || isTyping(w)) break
+      // Back and forth across the bar, from one spot to the next, as fast as its legs go.
+      if (isFrantic(w)) {
+        w.targetX = Math.floor(Math.random() * (maxX + 1))
+        setMode(w, 'walk')
+        break
+      }
       if (p.mood === 'idle' && w.t - w.lastActive > 900) {
         setMode(w, 'sleep')
         w.face = 0
@@ -758,7 +783,7 @@ function spriteRows(w: World): string[] {
   }
   if (w.mode === 'sleep') return ['..........', top, eyes, 'oooooooooo'] // legs tucked
   if (w.mode === 'wave' && flip) return [top, eyes.slice(0, 9) + 'o', 'ooooooooo.', STAND]
-  if (w.mode === 'walk') return [top, eyes, 'oooooooooo', WALK_LEGS[Math.floor(w.t / 2) % 4] ?? STAND]
+  if (w.mode === 'walk') return [top, eyes, 'oooooooooo', WALK_LEGS[Math.floor(w.t / (isFrantic(w) ? 1 : 2)) % 4] ?? STAND]
   // typing: arms tap down while Claude works, or along with you
   if ((w.props.mood === 'working' || isTyping(w)) && w.mode === 'idle' && flip) return [top, eyes, '.oooooooo.', 'oo.o..o.oo']
   return [top, eyes, 'oooooooooo', STAND]
@@ -940,9 +965,6 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
     fx = { text: z[Math.floor(w.t / 6) % 4] ?? '', color: '#8fa3bf', dx: [SPRITE_W - 2, SPRITE_W].find(dx => isClear(dx, 5)) ?? SPRITE_W - 2 }
   } else if (w.mode === 'jump') {
     fx = { text: flip ? '✦        ✦' : ' ✧      ✧', color: STAR, dx: 0 }
-  } else if (w.workSince >= 0 && w.t - w.workSince >= LONG_TURN && w.mode !== 'held') {
-    // Sweat drops flicking off one side of the head, then the other.
-    fx = { text: "'", color: SWEAT, dx: flip ? -1 : SPRITE_W }
   } else if (isTyping(w) && w.mode === 'idle') {
     // Tap on whichever side of the head the outfit leaves clear: the right unless something worn covers it there.
     const tapLeft = !isClear(SPRITE_W - 1, 4) && isClear(TAP_LEFT, 5)

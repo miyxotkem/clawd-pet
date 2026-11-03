@@ -26,7 +26,7 @@ In the Claude desktop app, where `/plugin` does not run: click **+** next to the
 
 - **Walks and talks.** Clawd crawls around its bar, blinks, chats now and then, greets you by time of day, and falls asleep when things are quiet.
 - **Meal and break reminders.** Once a day each, Clawd reminds you about breakfast (7:30), a stretch break (10:30), lunch (12:00), a snack (15:30), dinner (18:30) and bedtime (22:30). If you open Claude up to an hour late, it still reminds you.
-- **Reacts to Claude.** It says "On it!" when you send a prompt, comments on the tools Claude uses, taps its arms while Claude works, and jumps when a turn finishes. After two minutes on one turn it starts to sweat, and when a turn fails it wears a bandage.
+- **Reacts to Claude.** It says "On it!" when you send a prompt, comments on the tools Claude uses, taps its arms while Claude works, and jumps when a turn finishes. After a minute on one turn it starts to sweat, more each minute; after three it runs back and forth across the bar hunting for the answer. When a turn fails it wears a bandage.
 - **Thinks as hard as Claude.** While Claude works, thinking dots fill up beside Clawd's head: one slow dot on low effort, up to five quick yellow ones on max. When you switch the effort level, in `/effort` or the desktop app's effort menu, Clawd says so right away, with a jump when it goes up.
 - **Types along.** While you type in the prompt box, Clawd stops wandering and taps away with you, then goes back to its business a few seconds after you stop.
 - **Helper crabs.** Each subagent Claude starts brings a small crab that walks beside Clawd until the subagent returns (up to three at once).

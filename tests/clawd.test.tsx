@@ -318,16 +318,45 @@ test('commits and test runs get a word when they finish, passed or failed', asyn
   await ui.unmount()
 })
 
-test('a turn past two minutes makes Clawd sweat', async ($, on) => {
+test('a long turn makes Clawd sweat, more each minute, and past three it runs about', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
   on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
   const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  // Over two seconds: the sweat drops in the air at once at most, and every spot Clawd stood on.
+  const watch = async () => {
+    let drops = 0
+    const spots = new Set<number>()
+    for (let i = 0; i < 20; i++) {
+      await ui.advance(100)
+      const tree = JSON.stringify(await ui.drawn({ in: 'clawd' }))
+      drops = Math.max(drops, tree.split(SWEAT).length - 1)
+      spots.add(Number(/\{"type":"Box","props":\{"position":"absolute","top":\d+,"left":(\d+),"flexDirection":"column"\}/.exec(tree)?.[1]))
+    }
+    return { drops, spots: spots.size }
+  }
   await $.prompt.submit({ text: 'a big job' } as never)
+  await ui.advance(50_000)
+  const fresh = await watch()
+  expect(fresh.drops).toBe(0)
+  await ui.advance(16_000)
+  const warm = await watch()
+  expect(warm.drops).toBeGreaterThan(0)
   await ui.advance(60_000)
-  expect(JSON.stringify(await ui.drawn({ in: 'clawd' }))).not.toContain(SWEAT)
-  await ui.advance(61_000)
-  expect(JSON.stringify(await ui.drawn({ in: 'clawd' }))).toContain(SWEAT)
+  const hot = await watch()
+  expect(hot.drops).toBeGreaterThan(warm.drops)
+  // Working, Clawd stays put; past three minutes it runs, two cells a tick.
+  expect(hot.spots).toBe(1)
+  await ui.advance(60_000)
+  const frantic = await watch()
+  expect(frantic.drops).toBeGreaterThan(hot.drops)
+  expect(frantic.spots).toBeGreaterThan(10)
+
+  // The turn ends: the sweat stops.
+  await $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false } as never)
+  await ui.advance(5000)
+  expect((await watch()).drops).toBe(0)
   await ui.unmount()
 })
 
