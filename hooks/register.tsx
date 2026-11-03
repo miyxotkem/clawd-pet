@@ -24,9 +24,25 @@ const barRows = atom({ plugin: 'clawd-pet', key: 'barRows' } as const, 0)
 // Ultracode's switch in /effort, as its output reports it: "Ultracode on", "· Ultracode off".
 const ULTRACODE = /\bultracode\W+(on|off)\b/i
 
-// The `ultracode` setting as it stands: true, false, or undefined when nothing set it.
-async function readUltracode($: StateDollar): Promise<unknown> {
-  return $.settings.read({ key: 'ultracode' }).catch(() => undefined)
+// /effort's output when it sets a level: "Set effort level to Max: …".
+const EFFORT_SET = /\bset effort level to (extra high|x-?high|low|medium|high|max)\b/i
+
+// A setting as it stands (`ultracode`, `effortLevel`), or undefined when nothing set it.
+async function readSetting($: StateDollar, key: string): Promise<unknown> {
+  return $.settings.read({ key }).catch(() => undefined)
+}
+
+// An effort level as /effort or the settings spell it, or null for anything that is not one.
+function levelOf(value: unknown): string | null {
+  const level = typeof value === 'string' ? value.toLowerCase().replace(/^(extra high|x-high)$/, 'xhigh') : ''
+  return EFFORTS.includes(level) ? level : null
+}
+
+// Clawd learns the effort level, and says so, with a jump going up, when it changed.
+async function noteEffort($: StateDollar, level: string | null) {
+  const was = await read($, effort)
+  await update($, effort, () => level)
+  if (was && level && was !== level) await say($, effortLine(was, level), EFFORTS.indexOf(level) > EFFORTS.indexOf(was) ? 'done' : 'info')
 }
 
 // Effort levels, lowest first: how hard Claude is asked to think.
@@ -139,17 +155,25 @@ export const register: Register = on => {
     // Dress for the model the chat starts on (this runs again on each reload of the mod).
     const model = await $.session.model().catch(() => '')
     if (model) await wearSuitFor($, model, false)
-    // The desktop app's effort menu flips ultracode as a session setting, with no command and no row in the
-    // conversation, and nothing announces it: watch the setting, and transform when it changes.
-    // A session that starts with it on starts as the hero.
-    let setting = await readUltracode($)
-    await update($, hero, () => setting === true)
+    // The desktop app's effort menu sets the level and flips ultracode as session settings, with no command and
+    // no row in the conversation, and nothing announces it: watch the settings, and react as they change.
+    // A session starts as the hero if ultracode is on, and knows its level before the first prompt.
+    let ultracode = await readSetting($, 'ultracode')
+    let level = await readSetting($, 'effortLevel')
+    await update($, hero, () => ultracode === true)
+    if (levelOf(level)) await update($, effort, () => levelOf(level))
     $.clock.every(1000, async () => {
-      const now = await readUltracode($)
-      // Only a change counts: /effort in the terminal may flip ultracode without touching the setting.
-      if (now === setting) return
-      setting = now
-      await update($, hero, () => now === true)
+      // Only a change counts: /effort in the terminal may switch either without touching the settings.
+      const ultracodeNow = await readSetting($, 'ultracode')
+      if (ultracodeNow !== ultracode) {
+        ultracode = ultracodeNow
+        await update($, hero, () => ultracodeNow === true)
+      }
+      const levelNow = await readSetting($, 'effortLevel')
+      if (levelNow !== level) {
+        level = levelNow
+        if (levelOf(levelNow)) await noteEffort($, levelOf(levelNow))
+      }
     })
 
     return next(e)
@@ -169,6 +193,9 @@ export const register: Register = on => {
         const name = e.message.name
         const flipped = name === 'ultra_effort_enter' ? 'on' : name === 'ultra_effort_exit' ? 'off' : ULTRACODE.exec(text)?.[1]?.toLowerCase()
         if (flipped) await update($, hero, () => flipped === 'on')
+        // /effort set a level: Clawd says so as the panel closes, not at the next prompt.
+        const set = levelOf(EFFORT_SET.exec(text)?.[1])
+        if (set) await noteEffort($, set)
       } catch {
         // Clawd's bookkeeping never holds up the conversation.
       }
@@ -225,15 +252,12 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // The effort level rides on each model request: note it on a turn's first, and say so when it changed.
-  // turn.step streams, so the hook is a generator that passes the stream through untouched.
+  // The effort level also rides on each model request: a turn's first catches any switch the settings and
+  // /effort's output did not show. turn.step streams, so the hook is a generator that passes the stream through.
   on('turn.step', async function* ($, e, next) {
     if (e.agentId === undefined && e.index === 0) {
       try {
-        const level = typeof e.effort === 'string' && EFFORTS.includes(e.effort) ? e.effort : null
-        const was = await read($, effort)
-        await update($, effort, () => level)
-        if (was && level && was !== level) await say($, effortLine(was, level), EFFORTS.indexOf(level) > EFFORTS.indexOf(was) ? 'done' : 'info')
+        await noteEffort($, levelOf(e.effort))
       } catch {
         // Clawd's own bookkeeping never holds up the model's request.
       }

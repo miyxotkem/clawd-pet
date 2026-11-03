@@ -543,6 +543,43 @@ test("the desktop app's effort menu flipping the ultracode setting transforms Cl
   expect(await visor()).toBe(false)
 })
 
+test('Clawd notices an effort switch as it happens, from the menu or /effort, with no prompt sent', async ($, on) => {
+  const clock = mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('command.register', () => ({ value: { command: 'clawd' } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: 'claude-fable-5-1' }))
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
+  })
+  // Stands for the settings the desktop app's effort menu writes.
+  let effortLevel = 'high'
+  on('settings.read', () => ({ value: { effortLevel } }) as never)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+  await ui.advance(100)
+  const says = async (text: RegExp) => {
+    await ui.advance(100)
+    return !!(await ui.find({ type: 'Text', text, in: 'clawd' }))
+  }
+
+  // Picked in the menu: said within a second.
+  effortLevel = 'max'
+  await clock.advance(1100)
+  expect(await says(/Max effort/)).toBe(true)
+
+  // Set with /effort in the terminal: its output row says so as the panel closes.
+  await $.session.append({ message: { type: 'system', content: [{ type: 'text', text: '<local-command-stdout>Set effort level to Low: quick answers</local-command-stdout>' }] } } as never)
+  expect(await says(/Low effort/)).toBe(true)
+
+  // The next prompt's request at the same level is no news.
+  await ui.advance(5000)
+  for await (const _ of $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', effort: 'low', messageCount: 1 } as never) as unknown as AsyncIterable<unknown>);
+  expect(await says(/effort/i)).toBe(false)
+  await ui.unmount()
+})
+
 test('Clawd types along while you type, and stops a few seconds after', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
