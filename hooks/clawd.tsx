@@ -635,6 +635,15 @@ function eyeColor(w: World): string {
   return DARK
 }
 
+// Idle for 40 seconds: time for headphones.
+const isDjTime = (w: World) => w.props.mood === 'idle' && w.t - w.lastActive > 400
+
+// The model suit Clawd keeps on under its headphones between jobs, if it wears one.
+function suitUnder(w: World, costume: string | null): string | null {
+  const rest = w.props.restCostume
+  return costume === 'dj' && w.props.isAutoCostume && rest && SUITS[rest] ? rest : null
+}
+
 // What the crab wears now: its pose can call for one (the parachute, the book over a sleeping crab).
 function wearing(w: World): string | null {
   if (w.chute && w.mode === 'fall') return 'parachute'
@@ -644,10 +653,9 @@ function wearing(w: World): string | null {
   if (c === 'demo') return DEMO[Math.max(0, Math.min(w.demoShown, DEMO.length - 1))] ?? null
   if (w.props.isAutoCostume) {
     if (w.mode === 'sleep') return 'reader'
-    // Between jobs it wears its model's suit, if any, else headphones once idle a while.
-    const rest = w.props.restCostume
-    if (c === 'rocket' && w.t - w.costumeAt > 50) return rest // the launch is over
-    if (!c) return rest ?? (w.props.mood === 'idle' && w.t - w.lastActive > 400 ? 'dj' : null)
+    // Between jobs (a few seconds after the launch, when a turn ends) it wears its rest outfit, and once idle a
+    // while puts headphones on over it: a model suit stays on underneath (see suitUnder).
+    if (!c || (c === 'rocket' && w.t - w.costumeAt > 50)) return isDjTime(w) ? 'dj' : w.props.restCostume
   }
   if (c === 'parachute') return w.mode === 'fall' ? c : null // packed until it falls
   return c && COSTUMES[c] ? c : null
@@ -750,7 +758,8 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
   // Charging up to transform, plain Clawd glows on and off.
   const charging = w.morph?.dir === 1 && w.t - w.morph.at >= CHARGE && flip
   const crabColors = { o: charging ? GLOW : BODY, L: eye, R: eye }
-  const costumeSuit = costume ? SUITS[costume] : undefined
+  const under = suitUnder(w, costume)
+  const costumeSuit = costume ? (SUITS[costume] ?? (under ? SUITS[under] : undefined)) : undefined
   const armor = armorRows(w)
   const crabRow = (line: string, r: number) => {
     // A sleeping crab sits a row lower: its rows start one later.
@@ -797,6 +806,7 @@ const Clawd: ClientModule<PetProps, { w: World }> = (props, s) => {
   const bubbleTop = Math.max(0, props.rows - 3)
   const left = x + swing
   const pieces = [
+    ...(under ? (COSTUMES[under] ?? []) : []),
     ...(costume ? (COSTUMES[costume] ?? []) : []),
     ...(w.mode === 'sad' ? [BANDAGE] : []),
     ...(armor === SPRITE_H ? HERO_PODS : []),

@@ -580,6 +580,39 @@ test('Clawd notices an effort switch as it happens, from the menu or /effort, wi
   await ui.unmount()
 })
 
+test('idle a while after a turn, Clawd puts headphones on, over its model suit if it wears one', async ($, on) => {
+  mock.clock(on, { now: NO_HOLIDAY })
+  on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('classic.PostModelSwitch', () => ({}))
+  const switchTo = (to_model: string) =>
+    $.classic.PostModelSwitch({ from_model: 'x', to_model, requested_model: null, source: 'command', context_tokens: 0 } as never)
+  // A turn that ends well, then the bar 15 and 45 seconds on.
+  const afterTurn = async () => {
+    const ui = await $.ui.mount({ ...BAR, surface: 'desktop' } as never)
+    await $.prompt.submit({ text: 'go' } as never)
+    await ui.advance(1000)
+    await $.turn.complete({ reason: 'answer', answer: '', durationMs: 1, isAborted: false } as never)
+    await ui.advance(15_000)
+    const soon = JSON.stringify(await ui.drawn({ in: 'clawd' }))
+    await ui.advance(30_000)
+    const later = JSON.stringify(await ui.drawn({ in: 'clawd' }))
+    await ui.unmount()
+    return { soon, later }
+  }
+
+  await switchTo('claude-fable-5-1')
+  const plain = await afterTurn()
+  expect(plain.soon).not.toContain(NAVY)
+  expect(plain.later).toContain(NAVY) // the headband
+
+  await switchTo('claude-opus-5-5')
+  const suited = await afterTurn()
+  expect(suited.later).toContain(NAVY)
+  expect(suited.later).toContain(WEB) // the spidercrab suit stays on underneath
+})
+
 test('Clawd types along while you type, and stops a few seconds after', async ($, on) => {
   mock.clock(on, { now: NO_HOLIDAY })
   on('ui.render', { component: 'AbovePrompt' }, () => h('Box', null))
